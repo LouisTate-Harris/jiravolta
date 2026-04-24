@@ -1,0 +1,142 @@
+.interactive-timeline {
+    background: white;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1rem;
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.issue-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.issue-selector label {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.issue-selector select {
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    background: white;
+    cursor: pointer;
+}
+
+.overlap-warning {
+    color: #d32f2f;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    background: #ffebee;
+    border-radius: 4px;
+}
+
+.timeline-container {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    position: relative;
+    user-select: none;
+}
+
+.time-labels {
+    flex-shrink: 0;
+    width: 60px;
+    padding-top: 0;
+}
+
+.time-label {
+    font-size: 12px;
+    color: #666;
+    text-align: right;
+    padding-right: 0.5rem;
+    box-sizing: border-box;
+    position: relative;
+}
+
+.timeline-grid {
+    display: flex;
+    gap: 1px;
+    flex: 1;
+    background: #e0e0e0;
+    padding: 0;
+}
+
+.day-column {
+    flex: 1;
+    min-width: 100px;
+    background: white;
+    position: relative;
+    cursor: crosshair;
+}
+
+.hour-cell {
+    border-bottom: 1px solid #e0e0e0;
+    position: relative;
+    box-sizing: border-box;
+}
+
+.quarter-markers {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    justify-content: space-evenly;
+}
+
+.marker {
+    height: 0;
+    border-top: 1px solid #f0f0f0;
+}
+
+.worklog-block.preview {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    background: #e3f2fd;
+    border: 2px dashed #1976d2;
+    border-radius: 4px;
+    padding: 4px;
+    pointer-events: none;
+    opacity: 0.8;
+    z-index: 5;
+}
+
+.worklog-block.preview.overlap {
+    background: #ffebee;
+    border-color: #d32f2f;
+}
+
+.worklog-content {
+    font-size: 12px;
+    overflow: hidden;
+}
+
+.worklog-issue {
+    font-weight: 600;
+    color: #1976d2;
+    margin-bottom: 2px;
+}
+
+.worklog-time {
+    font-size: 11px;
+    color: #666;
+}
+
+.worklog-duration {
+    font-size: 11px;
+    color: #999;
+    margin-top: 2px;
+}

@@ -1,0 +1,64 @@
+.week-navigation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 2rem;
+    background: white;
+    border-bottom: 2px solid #e0e0e0;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.week-info h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 28px;
+    font-weight: 700;
+    color: #1976d2;
+}
+
+.week-range {
+    font-size: 16px;
+    color: #666;
+    font-weight: 500;
+}
+
+.week-controls {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.nav-btn,
+.today-btn {
+    padding: 0.75rem 1.25rem;
+    border: 1px solid #ccc;
+    background: white;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.nav-btn:hover {
+    background: #f5f5f5;
+    border-color: #999;
+}
+
+.nav-btn:active {
+    background: #e0e0e0;
+}
+
+.today-btn {
+    background: #1976d2;
+    color: white;
+    border-color: #1976d2;
+}
+
+.today-btn:hover {
+    background: #1565c0;
+    border-color: #1565c0;
+}
+
+.today-btn:active {
+    background: #0d47a1;
+}
