@@ -8,7 +8,7 @@ import type { JiraWorklog, JiraWorklogResponse } from './jiraTypes';
 /**
  * Transform a Jira worklog to our application Worklog format
  */
-export function transformJiraWorklog(jiraWorklog: JiraWorklog): Worklog {
+export function transformJiraWorklog(jiraWorklog: JiraWorklog, issueKeyMap: Record<string, string> = {}): Worklog {
     const started = new Date(jiraWorklog.started);
     const durationMinutes = Math.round(jiraWorklog.timeSpentSeconds / 60);
 
@@ -17,7 +17,7 @@ export function transformJiraWorklog(jiraWorklog: JiraWorklog): Worklog {
 
     return {
         id: jiraWorklog.id,
-        issueKey: jiraWorklog.issueKey || extractIssueKeyFromId(jiraWorklog.issueId),
+        issueKey: jiraWorklog.issueKey || issueKeyMap[jiraWorklog.issueId] || extractIssueKeyFromId(jiraWorklog.issueId),
         start: started.toISOString(),
         end: end.toISOString(),
         durationMinutes,
@@ -29,7 +29,15 @@ export function transformJiraWorklog(jiraWorklog: JiraWorklog): Worklog {
  * Transform a Jira worklog response to an array of Worklogs
  */
 export function transformJiraWorklogResponse(response: JiraWorklogResponse): Worklog[] {
-    return response.results.map(transformJiraWorklog);
+    return response.results.map(w => transformJiraWorklog(w));
+}
+
+/**
+ * Transform a flat worklog array from POST /rest/api/3/worklog/list,
+ * using the issueKeyMap to resolve issueKey for each entry.
+ */
+export function transformJiraWorklogList(worklogs: JiraWorklog[], issueKeyMap: Record<string, string>): Worklog[] {
+    return worklogs.map(w => transformJiraWorklog(w, issueKeyMap));
 }
 
 /**

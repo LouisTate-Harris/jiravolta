@@ -52,7 +52,7 @@ export function getIssueColor(issueKey: string): string {
  * @param backgroundColor - HSL color string
  * @returns 'black' or 'white'
  */
-export function getContrastColor(backgroundColor: string): string {
+export function getContrastColor(_backgroundColor: string): string {
     // For our palette with 70% saturation and 75% lightness, black text works well
     return '#000000';
 }

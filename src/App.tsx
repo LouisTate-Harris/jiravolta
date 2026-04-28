@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Worklog, DraftWorklog } from './types';
+import type { Worklog, DraftWorklog, IssueDisplayMode } from './types';
 import {
   getWeekStart,
   getWeekDays,
@@ -10,7 +10,8 @@ import {
 import { fetchMockWorklogs } from './utils/mockData';
 import { loadDrafts, saveDrafts, clearDrafts } from './utils/storageUtils';
 import { mergeWorklogsAndDrafts } from './utils/validationUtils';
-import { fetchWorklogsForWeek, isJiraConfigured } from './services/jiraService';
+import { fetchWorklogsForWeek, isJiraConfigured, createJiraWorklog, updateJiraWorklog, deleteJiraWorklog, invalidateWeekCache, fetchActiveIssues, clearAllCache } from './services/jiraService';
+import { getIssueLabel } from './utils/issueDisplayUtils';
 import { WeekNavigation } from './components/WeekNavigation';
 import { StatusMatrix } from './components/StatusMatrix';
 import { InteractiveTimeline } from './components/InteractiveTimeline';
@@ -18,6 +19,7 @@ import { ReviewPanel } from './components/ReviewPanel';
 import './App.css';
 
 function App() {
+  const jiraBaseUrl = import.meta.env.VITE_JIRA_BASE_URL as string | undefined;
   const [currentWeek, setCurrentWeek] = useState<Date>(new Date());
   const [jiraWorklogs, setJiraWorklogs] = useState<Worklog[]>([]);
   const [drafts, setDrafts] = useState<DraftWorklog[]>([]);
@@ -25,8 +27,14 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const [usingMockData, setUsingMockData] = useState(false);
   const [selectedWorklogIds, setSelectedWorklogIds] = useState<Set<string>>(new Set());
+  const [clipboardWorklogs, setClipboardWorklogs] = useState<Worklog[]>([]);
+  const [issueNameMap, setIssueNameMap] = useState<Record<string, string>>({});
+  const [issueDisplayMode, setIssueDisplayMode] = useState<IssueDisplayMode>('name');
+  const [activeIssueMap, setActiveIssueMap] = useState<Record<string, string>>({});
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const weekStart = useMemo(() => getWeekStart(currentWeek), [currentWeek]);
   const weekDays = useMemo(() => getWeekDays(currentWeek), [currentWeek]);
@@ -39,10 +47,32 @@ function App() {
   }, [weekDays]);
   const allWorklogs = mergeWorklogsAndDrafts(jiraWorklogs, drafts);
 
-  // Get unique issue keys for the dropdown
+  // Merge week worklogs + active issues into a unified sorted list for the dropdown
+  const mergedIssueNameMap = { ...activeIssueMap, ...issueNameMap };
   const availableIssues = Array.from(
-    new Set(allWorklogs.map(w => w.issueKey))
-  ).sort();
+    new Set([...Object.keys(activeIssueMap), ...allWorklogs.map(w => w.issueKey)])
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+  const formatIssueLabel = (issueKey: string, maxLength?: number) => {
+    return getIssueLabel(issueKey, mergedIssueNameMap, issueDisplayMode, maxLength);
+  };
+
+  const getIssueFullLabel = (issueKey: string) => {
+    return mergedIssueNameMap[issueKey] || issueKey;
+  };
+
+  const getIssueUrl = (issueKey: string) => {
+    if (!jiraBaseUrl) {
+      return null;
+    }
+
+    const trimmedBaseUrl = jiraBaseUrl.replace(/\/+$/, '');
+    const browseBaseUrl = trimmedBaseUrl.endsWith('/browse')
+      ? trimmedBaseUrl
+      : `${trimmedBaseUrl}/browse`;
+
+    return `${browseBaseUrl}/${encodeURIComponent(issueKey)}`;
+  };
 
   // Load worklogs and drafts when week changes
   useEffect(() => {
@@ -53,11 +83,14 @@ function App() {
 
       try {
         let worklogs: Worklog[];
+        let names: Record<string, string> = {};
 
         // Try to fetch from Jira if configured, otherwise use mock data
         if (isJiraConfigured()) {
           try {
-            worklogs = await fetchWorklogsForWeek(weekStart, weekEnd);
+            const jiraData = await fetchWorklogsForWeek(weekStart, weekEnd);
+            worklogs = jiraData.worklogs;
+            names = jiraData.issueNameMap;
           } catch (jiraError) {
             console.warn('[APP] Jira fetch failed, falling back to mock data', jiraError);
             worklogs = await fetchMockWorklogs(weekStart);
@@ -70,6 +103,7 @@ function App() {
         }
 
         setJiraWorklogs(worklogs);
+        setIssueNameMap(names);
 
         // Load drafts from LocalStorage
         const savedDrafts = loadDrafts(weekStart);
@@ -83,7 +117,19 @@ function App() {
 
     loadWeekData();
     // Use formatDate to create stable dependency
-  }, [formatDate(weekStart), formatDate(weekEnd)]);
+  }, [formatDate(weekStart), formatDate(weekEnd), refreshKey]);
+
+  // Load active issues once (cached server-side; re-fetched when refreshKey changes)
+  useEffect(() => {
+    if (!isJiraConfigured()) return;
+    fetchActiveIssues().then(issues => {
+      const map: Record<string, string> = {};
+      for (const issue of issues) {
+        map[issue.key] = issue.summary;
+      }
+      setActiveIssueMap(map);
+    });
+  }, [refreshKey]);
 
   // Save drafts to LocalStorage whenever they change
   useEffect(() => {
@@ -93,16 +139,26 @@ function App() {
     // Use formatDate to create stable dependency
   }, [drafts, formatDate(weekStart), loading]);
 
-  // Keyboard event listener for Delete/Backspace to delete selected worklogs
+  // Keyboard event listener for Delete/Backspace and Ctrl+C
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only delete if Delete or Backspace is pressed and there are selected worklogs
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedWorklogIds.size > 0) {
-        // Don't delete if user is typing in an input/textarea
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-          return;
+      const target = e.target as HTMLElement;
+      const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+      // Ctrl+C / Cmd+C: copy selected worklogs to clipboard
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedWorklogIds.size > 0 && !isInputField) {
+        e.preventDefault();
+        const merged = mergeWorklogsAndDrafts(jiraWorklogs, drafts);
+        const copied = merged.filter(w => selectedWorklogIds.has(w.id));
+        if (copied.length > 0) {
+          setClipboardWorklogs(copied);
         }
+        return;
+      }
+
+      // Delete/Backspace: delete selected worklogs
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedWorklogIds.size > 0) {
+        if (isInputField) return;
 
         e.preventDefault();
 
@@ -137,7 +193,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedWorklogIds, jiraWorklogs]);
+  }, [selectedWorklogIds, jiraWorklogs, drafts]);
 
   const handlePreviousWeek = () => {
     setCurrentWeek(prev => getPreviousWeek(prev));
@@ -149,6 +205,11 @@ function App() {
 
   const handleToday = () => {
     setCurrentWeek(new Date());
+  };
+
+  const handleClearCache = async () => {
+    await clearAllCache();
+    setRefreshKey(k => k + 1);
   };
 
   const handleCreateWorklog = (draft: DraftWorklog) => {
@@ -255,32 +316,119 @@ function App() {
     });
   };
 
-  const handleDeleteSelected = () => {
-    // Delete all selected worklogs
-    selectedWorklogIds.forEach(id => {
-      handleDeleteWorklog(id);
+  const handlePasteWorklogs = (dayIndex: number, cursorTime: Date) => {
+    if (clipboardWorklogs.length === 0) return;
+
+    // Anchor on the clipboard worklog with the earliest start time
+    const anchor = clipboardWorklogs.reduce((earliest, w) =>
+      w.start < earliest.start ? w : earliest
+    );
+
+    const anchorDate = new Date(anchor.start);
+    const anchorMinutes = anchorDate.getHours() * 60 + anchorDate.getMinutes();
+    const cursorMinutes = cursorTime.getHours() * 60 + cursorTime.getMinutes();
+
+    const newDrafts: DraftWorklog[] = clipboardWorklogs.map(w => {
+      const wDate = new Date(w.start);
+      const wMinutes = wDate.getHours() * 60 + wDate.getMinutes();
+      const relativeOffset = wMinutes - anchorMinutes;
+
+      // Clamp so the block fits within the day
+      const newStartMinutes = Math.max(0, Math.min(1439 - w.durationMinutes, cursorMinutes + relativeOffset));
+
+      const targetDay = weekDays[dayIndex];
+      const newStart = new Date(targetDay);
+      newStart.setHours(Math.floor(newStartMinutes / 60), newStartMinutes % 60, 0, 0);
+
+      const newEnd = new Date(newStart);
+      newEnd.setMinutes(newEnd.getMinutes() + w.durationMinutes);
+
+      return {
+        ...w,
+        id: crypto.randomUUID(),
+        start: newStart.toISOString(),
+        end: newEnd.toISOString(),
+        source: 'draft' as const,
+        changeType: 'create' as const,
+        lastModified: new Date().toISOString(),
+      };
     });
-    // Clear selection
-    setSelectedWorklogIds(new Set());
+
+    setDrafts(prev => [...prev, ...newDrafts]);
   };
 
-  const handleApproveAll = () => {
-    // In MVP, this simulates pushing to Jira
-    // In production, this would make API calls
+  const handleApproveAll = async () => {
+    if (!isJiraConfigured()) {
+      // Mock mode: optimistic local update only
+      setDrafts([]);
+      clearDrafts(weekStart);
+      const mergedWorklogs = mergeWorklogsAndDrafts(jiraWorklogs, drafts);
+      setJiraWorklogs(mergedWorklogs);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      setReviewPanelOpen(false);
+      return;
+    }
 
-    // Clear all drafts
-    setDrafts([]);
-    clearDrafts(weekStart);
+    // Real Jira API: push each draft sequentially
+    setLoading(true);
+    const failed: DraftWorklog[] = [];
+    const newJiraWorklogs = [...jiraWorklogs];
 
-    // Merge drafts into Jira worklogs (simulate sync)
-    const mergedWorklogs = mergeWorklogsAndDrafts(jiraWorklogs, drafts);
-    setJiraWorklogs(mergedWorklogs);
+    for (const draft of drafts) {
+      try {
+        if (draft.changeType === 'create') {
+          const created = await createJiraWorklog(draft);
+          newJiraWorklogs.push({
+            id: created.id,
+            issueKey: draft.issueKey,
+            start: draft.start,
+            end: draft.end,
+            durationMinutes: draft.durationMinutes,
+            source: 'jira',
+          });
+        } else if (draft.changeType === 'update') {
+          await updateJiraWorklog(draft);
+          const idx = newJiraWorklogs.findIndex(w => w.id === draft.id);
+          if (idx !== -1) {
+            newJiraWorklogs[idx] = {
+              id: draft.id,
+              issueKey: draft.issueKey,
+              start: draft.start,
+              end: draft.end,
+              durationMinutes: draft.durationMinutes,
+              source: 'jira',
+            };
+          }
+        } else if (draft.changeType === 'delete') {
+          await deleteJiraWorklog(draft);
+          const idx = newJiraWorklogs.findIndex(w => w.id === draft.id);
+          if (idx !== -1) newJiraWorklogs.splice(idx, 1);
+        }
+      } catch (err) {
+        console.error('[APP] Failed to sync draft', draft.id, err);
+        failed.push(draft);
+      }
+    }
 
-    // Show success message
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+    // Invalidate the local cache so the next week navigation re-fetches from Jira
+    await invalidateWeekCache(weekStart);
 
-    setReviewPanelOpen(false);
+    setJiraWorklogs(newJiraWorklogs);
+    setDrafts(failed);
+
+    if (failed.length > 0) {
+      saveDrafts(weekStart, failed);
+      setApprovalError(`${failed.length} change(s) failed to sync to Jira — see review panel`);
+      setTimeout(() => setApprovalError(null), 6000);
+    } else {
+      clearDrafts(weekStart);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      setReviewPanelOpen(false);
+    }
+
+    setLoading(false);
   };
 
   const handleDiscardAll = () => {
@@ -296,6 +444,9 @@ function App() {
         onPreviousWeek={handlePreviousWeek}
         onNextWeek={handleNextWeek}
         onToday={handleToday}
+        issueDisplayMode={issueDisplayMode}
+        onIssueDisplayModeChange={setIssueDisplayMode}
+        onClearCache={isJiraConfigured() ? handleClearCache : undefined}
       />
 
       {usingMockData && (
@@ -317,6 +468,9 @@ function App() {
           worklogs={allWorklogs}
           loading={loading}
           error={error}
+          formatIssueLabel={formatIssueLabel}
+          getIssueFullLabel={getIssueFullLabel}
+          getIssueUrl={getIssueUrl}
         />
 
         {!loading && !error && (
@@ -328,10 +482,14 @@ function App() {
             onDeleteWorklog={handleDeleteWorklog}
             onDuplicateWorklog={handleDuplicateWorklog}
             availableIssues={availableIssues.length > 0 ? availableIssues : ['PROJ-101']}
+            formatIssueLabel={formatIssueLabel}
+            getIssueFullLabel={getIssueFullLabel}
             startHour={6}
             endHour={20}
             selectedWorklogIds={selectedWorklogIds}
             onToggleSelection={handleToggleSelection}
+            clipboardWorklogs={clipboardWorklogs}
+            onPasteWorklogs={handlePasteWorklogs}
           />
         )}
       </div>
@@ -342,11 +500,19 @@ function App() {
         onToggle={() => setReviewPanelOpen(!reviewPanelOpen)}
         onApproveAll={handleApproveAll}
         onDiscardAll={handleDiscardAll}
+        formatIssueLabel={formatIssueLabel}
+        getIssueFullLabel={getIssueFullLabel}
       />
 
       {showSuccess && (
         <div className="success-toast">
           ✓ Changes approved successfully!
+        </div>
+      )}
+
+      {approvalError && (
+        <div className="success-toast" style={{ backgroundColor: '#c0392b' }}>
+          ✗ {approvalError}
         </div>
       )}
     </div>

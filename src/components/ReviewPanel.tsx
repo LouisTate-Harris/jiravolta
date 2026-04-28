@@ -9,6 +9,8 @@ interface ReviewPanelProps {
     onToggle: () => void;
     onApproveAll: () => void;
     onDiscardAll: () => void;
+    formatIssueLabel: (issueKey: string, maxLength?: number) => string;
+    getIssueFullLabel: (issueKey: string) => string;
 }
 
 export const ReviewPanel: React.FC<ReviewPanelProps> = ({
@@ -17,6 +19,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
     onToggle,
     onApproveAll,
     onDiscardAll,
+    formatIssueLabel,
+    getIssueFullLabel,
 }) => {
     const getChangeTypeLabel = (changeType: string): string => {
         switch (changeType) {
@@ -69,7 +73,9 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                                         {getChangeTypeLabel(draft.changeType)}
                                     </div>
                                     <div className="draft-details">
-                                        <div className="draft-issue">{draft.issueKey}</div>
+                                        <div className="draft-issue" title={getIssueFullLabel(draft.issueKey)}>
+                                            {formatIssueLabel(draft.issueKey, 38)}
+                                        </div>
                                         <div className="draft-date">
                                             {formatDate(new Date(draft.start))}
                                         </div>

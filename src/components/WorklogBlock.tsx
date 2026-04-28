@@ -18,6 +18,8 @@ interface WorklogBlockProps {
     timelineLeft?: number;
     isSelected: boolean;
     onToggleSelection: (id: string, isMulti: boolean) => void;
+    formatIssueLabel: (issueKey: string, maxLength?: number) => string;
+    getIssueFullLabel: (issueKey: string) => string;
 }
 
 const MINUTES_PER_PIXEL = 60 / 60; // Assuming 60px per hour
@@ -36,6 +38,8 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
     timelineLeft: _timelineLeft = 0,
     isSelected,
     onToggleSelection,
+    formatIssueLabel,
+    getIssueFullLabel,
 }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [isResizing, setIsResizing] = useState(false);
@@ -300,10 +304,10 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
                     e.preventDefault();
                     setShowMenu(true);
                 }}
-                title={`${worklog.issueKey}\n${formatTime(new Date(worklog.start))} - ${formatTime(new Date(worklog.end))}\n${worklog.durationMinutes}m`}
+                title={`${getIssueFullLabel(worklog.issueKey)} (${worklog.issueKey})\n${formatTime(new Date(worklog.start))} - ${formatTime(new Date(worklog.end))}\n${worklog.durationMinutes}m`}
             >
                 <div className="worklog-content">
-                    <div className="worklog-issue">{worklog.issueKey}</div>
+                    <div className="worklog-issue">{formatIssueLabel(worklog.issueKey, 22)}</div>
                     {height > 30 && (
                         <>
                             <div className="worklog-time">

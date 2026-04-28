@@ -44,6 +44,53 @@
     border-radius: 4px;
 }
 
+.timeline-day-headers {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 4px;
+}
+
+.timeline-day-headers-spacer {
+    flex-shrink: 0;
+    width: 60px;
+}
+
+.timeline-day-header {
+    flex: 1;
+    min-width: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 2px;
+    border-radius: 4px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    line-height: 1.2;
+}
+
+.timeline-day-header--today {
+    background: #e3f2fd;
+    border-color: #90caf9;
+}
+
+.timeline-day-header-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.timeline-day-header-date {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+}
+
+.timeline-day-header--today .timeline-day-header-date {
+    color: #1565c0;
+}
+
 .timeline-container {
     display: flex;
     gap: 1rem;

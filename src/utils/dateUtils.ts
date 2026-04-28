@@ -39,24 +39,27 @@ export function getWeekDays(date: Date): Date[] {
  * Format date as YYYY-MM-DD
  */
 export function formatDate(date: Date): string {
-    return date.toISOString().split('T')[0];
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 /**
  * Format date as weekday name (Mon, Tue, etc.)
  */
 export function formatWeekday(date: Date): string {
-    return date.toLocaleDateString('en-US', { weekday: 'short' });
+    return date.toLocaleDateString('en-GB', { weekday: 'short' });
 }
 
 /**
- * Format date as "Mon 1/6"
+ * Format date as "13 Apr"
  */
 export function formatDayHeader(date: Date): string {
-    const weekday = formatWeekday(date);
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    return `${weekday} ${month}/${day}`;
+    return date.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+    });
 }
 
 /**
@@ -76,7 +79,7 @@ export function snapToQuarterHour(date: Date): Date {
  * Format time as HH:MM
  */
 export function formatTime(date: Date): string {
-    return date.toLocaleTimeString('en-US', {
+    return date.toLocaleTimeString('en-GB', {
         hour: '2-digit',
         minute: '2-digit',
         hour12: false

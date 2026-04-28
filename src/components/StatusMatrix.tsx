@@ -8,6 +8,9 @@ interface StatusMatrixProps {
     worklogs: Worklog[];
     loading?: boolean;
     error?: string | null;
+    formatIssueLabel: (issueKey: string, maxLength?: number) => string;
+    getIssueFullLabel: (issueKey: string) => string;
+    getIssueUrl: (issueKey: string) => string | null;
 }
 
 interface MatrixData {
@@ -61,6 +64,9 @@ export const StatusMatrix: React.FC<StatusMatrixProps> = ({
     worklogs,
     loading = false,
     error = null,
+    formatIssueLabel,
+    getIssueFullLabel,
+    getIssueUrl,
 }) => {
     const matrixData = calculateMatrixData(worklogs, weekDays);
 
@@ -105,7 +111,20 @@ export const StatusMatrix: React.FC<StatusMatrixProps> = ({
                 <tbody>
                     {matrixData.issues.map(issueKey => (
                         <tr key={issueKey}>
-                            <td className="issue-cell">{issueKey}</td>
+                            <td className="issue-cell" title={getIssueFullLabel(issueKey)}>
+                                {getIssueUrl(issueKey) ? (
+                                    <a
+                                        className="issue-link"
+                                        href={getIssueUrl(issueKey)!}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        {formatIssueLabel(issueKey, 34)}
+                                    </a>
+                                ) : (
+                                    formatIssueLabel(issueKey, 34)
+                                )}
+                            </td>
                             {weekDays.map((_, dayIndex) => {
                                 const hours = matrixData.matrix.get(issueKey)?.get(dayIndex) || 0;
                                 return (

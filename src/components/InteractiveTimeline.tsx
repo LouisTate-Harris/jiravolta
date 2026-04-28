@@ -13,10 +13,14 @@ interface InteractiveTimelineProps {
     onDeleteWorklog: (id: string) => void;
     onDuplicateWorklog: (id: string) => void;
     availableIssues: string[];
+    formatIssueLabel: (issueKey: string, maxLength?: number) => string;
+    getIssueFullLabel: (issueKey: string) => string;
     startHour?: number;
     endHour?: number;
     selectedWorklogIds: Set<string>;
     onToggleSelection: (id: string, isMulti: boolean) => void;
+    clipboardWorklogs: Worklog[];
+    onPasteWorklogs: (dayIndex: number, cursorTime: Date) => void;
 }
 
 interface DragState {
@@ -39,10 +43,14 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
     onDeleteWorklog,
     onDuplicateWorklog,
     availableIssues,
+    formatIssueLabel,
+    getIssueFullLabel,
     startHour = 0,
     endHour = 23,
     selectedWorklogIds,
     onToggleSelection,
+    clipboardWorklogs,
+    onPasteWorklogs,
 }) => {
     const [dragState, setDragState] = useState<DragState | null>(null);
     const [previewWorklog, setPreviewWorklog] = useState<Worklog | null>(null);
@@ -50,6 +58,8 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
     const [selectedIssue, setSelectedIssue] = useState<string>(availableIssues[0] || 'PROJ-101');
     const timelineRef = useRef<HTMLDivElement>(null);
     const timelineContainerRef = useRef<HTMLDivElement>(null);
+    const gridRef = useRef<HTMLDivElement>(null);
+    const lastHoverRef = useRef<{ dayIndex: number; time: Date } | null>(null);
     const [dayColumnWidth, setDayColumnWidth] = useState<number>(0);
 
     // Calculate dynamic hour range based on worklogs
@@ -111,6 +121,22 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
         return () => window.removeEventListener('resize', updateDayColumnWidth);
     }, [weekDays.length]);
 
+    // Ctrl+V: paste clipboard worklogs at the last hovered position
+    React.useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+                if (clipboardWorklogs.length > 0 && lastHoverRef.current) {
+                    e.preventDefault();
+                    onPasteWorklogs(lastHoverRef.current.dayIndex, lastHoverRef.current.time);
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [clipboardWorklogs, onPasteWorklogs]);
+
     const pixelToTime = useCallback((y: number, baseDate: Date): Date => {
         const minutes = y * MINUTES_PER_PIXEL;
         const date = new Date(baseDate);
@@ -151,6 +177,18 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
+        // Always track hover position for paste support
+        if (timelineRef.current && gridRef.current && dayColumnWidth > 0) {
+            const timeRect = timelineRef.current.getBoundingClientRect();
+            const gridRect = gridRef.current.getBoundingClientRect();
+            const y = e.clientY - timeRect.top;
+            const xInGrid = e.clientX - gridRect.left;
+            if (y >= 0 && xInGrid >= 0 && xInGrid <= gridRect.width) {
+                const hoveredDayIndex = Math.max(0, Math.min(weekDays.length - 1, Math.floor(xInGrid / dayColumnWidth)));
+                lastHoverRef.current = { dayIndex: hoveredDayIndex, time: pixelToTime(y, weekDays[hoveredDayIndex]) };
+            }
+        }
+
         if (!dragState || !timelineRef.current) return;
 
         const rect = timelineRef.current.getBoundingClientRect();
@@ -213,7 +251,9 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                     <label>New issue assigned to: </label>
                     <select value={selectedIssue} onChange={(e) => setSelectedIssue(e.target.value)}>
                         {availableIssues.map(issue => (
-                            <option key={issue} value={issue}>{issue}</option>
+                            <option key={issue} value={issue} title={getIssueFullLabel(issue)}>
+                                {formatIssueLabel(issue, 46)}
+                            </option>
                         ))}
                     </select>
                 </div>
@@ -222,12 +262,32 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                 )}
             </div>
 
+            <div className="timeline-day-headers">
+                <div className="timeline-day-headers-spacer" />
+                {weekDays.map((day, dayIndex) => {
+                    const isToday = day.toDateString() === new Date().toDateString();
+                    return (
+                        <div key={dayIndex} className={`timeline-day-header${isToday ? ' timeline-day-header--today' : ''}`}>
+                            <span className="timeline-day-header-name">
+                                {day.toLocaleDateString('en-GB', { weekday: 'short' })}
+                            </span>
+                            <span className="timeline-day-header-date">
+                                {day.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+
             <div
                 className="timeline-container"
                 ref={timelineContainerRef}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
+                onMouseLeave={() => {
+                    handleMouseUp();
+                    lastHoverRef.current = null;
+                }}
             >
                 <div className="time-labels" ref={timelineRef}>
                     {hours.map(hour => (
@@ -237,7 +297,7 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                     ))}
                 </div>
 
-                <div className="timeline-grid">
+                <div className="timeline-grid" ref={gridRef}>
                     {weekDays.map((_day, dayIndex) => (
                         <div
                             key={dayIndex}
@@ -274,6 +334,8 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                                     timelineLeft={timelineRef.current?.getBoundingClientRect().left || 0}
                                     isSelected={selectedWorklogIds.has(worklog.id)}
                                     onToggleSelection={onToggleSelection}
+                                    formatIssueLabel={formatIssueLabel}
+                                    getIssueFullLabel={getIssueFullLabel}
                                 />
                             ))}
 
@@ -286,7 +348,9 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                                     }}
                                 >
                                     <div className="worklog-content">
-                                        <div className="worklog-issue">{previewWorklog.issueKey}</div>
+                                        <div className="worklog-issue" title={getIssueFullLabel(previewWorklog.issueKey)}>
+                                            {formatIssueLabel(previewWorklog.issueKey, 26)}
+                                        </div>
                                         <div className="worklog-time">
                                             {formatTime(new Date(previewWorklog.start))} - {formatTime(new Date(previewWorklog.end))}
                                         </div>

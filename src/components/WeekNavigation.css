@@ -25,6 +25,37 @@
 .week-controls {
     display: flex;
     gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.issue-display-toggle {
+    display: inline-flex;
+    border: 1px solid #c7d6e6;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f4f8fc;
+}
+
+.toggle-btn {
+    padding: 0.6rem 0.85rem;
+    border: none;
+    background: transparent;
+    color: #2f4f6f;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+    background: #e8f0f8;
+}
+
+.toggle-btn.active {
+    background: #1976d2;
+    color: #fff;
 }
 
 .nav-btn,
@@ -61,4 +92,17 @@
 
 .today-btn:active {
     background: #0d47a1;
+}
+
+@media (max-width: 900px) {
+    .week-navigation {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .week-controls {
+        width: 100%;
+        justify-content: flex-start;
+    }
 }

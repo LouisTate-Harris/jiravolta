@@ -3,28 +3,37 @@
  * Every API call is logged to console for debugging
  */
 
-import type { Worklog } from '../types';
-import type { JiraWorklogResponse, JiraErrorResponse } from './jiraTypes';
-import { transformJiraWorklogResponse, formatDateForJira } from './jiraTransformers';
+import type { Worklog, DraftWorklog } from '../types';
+import { formatDate } from '../utils/dateUtils';
+import type {
+    JiraWeekCacheData,
+    JiraWorklog,
+} from './jiraTypes';
+import { transformJiraWorklogList } from './jiraTransformers';
 
-// Environment variables for Jira authentication
-const JIRA_BASE_URL = import.meta.env.VITE_JIRA_BASE_URL;
+export interface WeekWorklogData {
+    worklogs: Worklog[];
+    issueNameMap: Record<string, string>;
+}
+
+// Environment variables required by the local middleware.
 const JIRA_EMAIL = import.meta.env.VITE_JIRA_EMAIL;
 const JIRA_API_TOKEN = import.meta.env.VITE_JIRA_API_TOKEN;
+const JIRA_BASE_URL = import.meta.env.VITE_JIRA_BASE_URL;
+const LOCAL_JIRA_WORKLOGS_ENDPOINT = '/_local/jira-worklogs';
+const LOCAL_JIRA_TEST_ENDPOINT = '/_local/jira-test';
+const LOCAL_JIRA_WORKLOG_CREATE_ENDPOINT = '/_local/jira-worklog-create';
+const LOCAL_JIRA_WORKLOG_UPDATE_ENDPOINT = '/_local/jira-worklog-update';
+const LOCAL_JIRA_WORKLOG_DELETE_ENDPOINT = '/_local/jira-worklog-delete';
+const LOCAL_JIRA_CACHE_INVALIDATE_ENDPOINT = '/_local/jira-cache-invalidate';
+const LOCAL_JIRA_ACTIVE_ISSUES_ENDPOINT = '/_local/jira-active-issues';
+const LOCAL_JIRA_CACHE_CLEAR_ALL_ENDPOINT = '/_local/jira-cache-clear-all';
 
 /**
  * Check if Jira is configured
  */
 export function isJiraConfigured(): boolean {
     return !!(JIRA_BASE_URL && JIRA_EMAIL && JIRA_API_TOKEN);
-}
-
-/**
- * Create Basic Auth header for Jira API
- */
-function getAuthHeader(): string {
-    const credentials = btoa(`${JIRA_EMAIL}:${JIRA_API_TOKEN}`);
-    return `Basic ${credentials}`;
 }
 
 /**
@@ -38,120 +47,48 @@ function getAuthHeader(): string {
 export async function fetchWorklogsForWeek(
     weekStart: Date,
     weekEnd: Date
-): Promise<Worklog[]> {
+): Promise<WeekWorklogData> {
     if (!isJiraConfigured()) {
         console.warn('[JIRA API] Jira not configured, using mock data');
         throw new Error('Jira not configured. Please set VITE_JIRA_BASE_URL, VITE_JIRA_EMAIL, and VITE_JIRA_API_TOKEN in .env.local');
     }
 
-    const endpoint = `${JIRA_BASE_URL}/rest/api/3/worklog/updated`;
-    const fromDate = formatDateForJira(weekStart);
-    const toDate = formatDateForJira(weekEnd);
+    const weekKey = formatDate(weekStart);
+    const weekEndKey = formatDate(weekEnd);
 
-    console.log('[JIRA API] Fetching worklogs', {
-        endpoint,
-        weekStart: fromDate,
-        weekEnd: toDate,
-    });
+    console.log('[JIRA API] Using local middleware', { weekKey, weekEndKey });
 
     try {
-        const response = await fetchWithRetry(endpoint, {
-            method: 'GET',
-            headers: {
-                'Authorization': getAuthHeader(),
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-            },
-        });
-
+        const response = await fetch(`${LOCAL_JIRA_WORKLOGS_ENDPOINT}?week=${weekKey}&weekEnd=${weekEndKey}`);
         if (!response.ok) {
-            const errorData: JiraErrorResponse = await response.json().catch(() => ({}));
-            console.error('[JIRA API] Request failed', {
-                status: response.status,
-                statusText: response.statusText,
-                errorData,
-            });
-
-            throw new Error(
-                errorData.errorMessages?.join(', ') ||
-                `Jira API error: ${response.status} ${response.statusText}`
-            );
+            const errorText = await response.text().catch(() => 'Unknown local middleware error');
+            throw new Error(`Local Jira middleware error: ${response.status} ${errorText}`);
         }
 
-        const data: JiraWorklogResponse = await response.json();
-        console.log('[JIRA API] Raw response', {
-            totalResults: data.total,
-            returnedResults: data.results.length,
-            startAt: data.startAt,
+        const cacheData: JiraWeekCacheData = await response.json();
+        console.log('[JIRA API] Local cache data', {
+            worklogs: cacheData.worklogs.length,
+            issues: Object.keys(cacheData.issueKeyMap).length,
+            issueDetails: Object.keys(cacheData.issueDetailsMap ?? {}).length,
         });
 
-        const worklogs = transformJiraWorklogResponse(data);
+        const issueNameMap = Object.values(cacheData.issueDetailsMap ?? {}).reduce<Record<string, string>>((acc, details) => {
+            if (details.key) {
+                acc[details.key] = details.summary?.trim() || details.key;
+            }
+            return acc;
+        }, {});
 
-        // Filter worklogs to only include those in the date range
-        const filteredWorklogs = worklogs.filter(worklog => {
-            const worklogDate = new Date(worklog.start);
-            return worklogDate >= weekStart && worklogDate <= weekEnd;
+        const worklogs = transformJiraWorklogList(cacheData.worklogs, cacheData.issueKeyMap).filter(w => {
+            const d = new Date(w.start);
+            return d >= weekStart && d <= weekEnd;
         });
 
-        console.log('[JIRA API] Transformed worklogs', {
-            total: worklogs.length,
-            filtered: filteredWorklogs.length,
-            worklogs: filteredWorklogs,
-        });
-
-        return filteredWorklogs;
+        return { worklogs, issueNameMap };
     } catch (error) {
         console.error('[JIRA API] Fetch failed', error);
         throw error;
     }
-}
-
-/**
- * Fetch with exponential backoff retry logic
- */
-async function fetchWithRetry(
-    url: string,
-    options: RequestInit,
-    maxRetries = 3
-): Promise<Response> {
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            console.log(`[JIRA API] Attempt ${attempt}/${maxRetries}`);
-            const response = await fetch(url, options);
-
-            // Don't retry on 4xx errors (client errors)
-            if (response.status >= 400 && response.status < 500) {
-                return response;
-            }
-
-            // Return successful responses
-            if (response.ok) {
-                return response;
-            }
-
-            // Retry on 5xx errors (server errors)
-            if (attempt < maxRetries) {
-                const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-                console.warn(`[JIRA API] Retry after ${delay}ms due to status ${response.status}`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
-            }
-
-            return response;
-        } catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-
-            if (attempt < maxRetries) {
-                const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-                console.warn(`[JIRA API] Retry after ${delay}ms due to error:`, error);
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
-        }
-    }
-
-    throw lastError || new Error('Max retries exceeded');
 }
 
 /**
@@ -163,17 +100,10 @@ export async function testJiraConnection(): Promise<boolean> {
         return false;
     }
 
-    const endpoint = `${JIRA_BASE_URL}/rest/api/3/myself`;
-    console.log('[JIRA API] Testing connection', { endpoint });
+    console.log('[JIRA API] Testing connection via local middleware');
 
     try {
-        const response = await fetch(endpoint, {
-            method: 'GET',
-            headers: {
-                'Authorization': getAuthHeader(),
-                'Accept': 'application/json',
-            },
-        });
+        const response = await fetch(LOCAL_JIRA_TEST_ENDPOINT);
 
         console.log('[JIRA API] Connection test result', {
             status: response.status,
@@ -184,5 +114,126 @@ export async function testJiraConnection(): Promise<boolean> {
     } catch (error) {
         console.error('[JIRA API] Connection test failed', error);
         return false;
+    }
+}
+
+/**
+ * Create a new worklog in Jira for the given draft.
+ * Returns the Jira-assigned worklog (with a real numeric id).
+ */
+export async function createJiraWorklog(draft: DraftWorklog): Promise<JiraWorklog> {
+    // Jira requires an explicit timezone offset, not trailing 'Z'
+    const started = new Date(draft.start).toISOString().replace('Z', '+0000');
+    const timeSpentSeconds = draft.durationMinutes * 60;
+
+    console.log('[JIRA API] Creating worklog', { issueKey: draft.issueKey, started, timeSpentSeconds });
+
+    const response = await fetch(LOCAL_JIRA_WORKLOG_CREATE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issueKey: draft.issueKey, started, timeSpentSeconds }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Failed to create worklog for ${draft.issueKey}: ${response.status} ${errorText}`);
+    }
+
+    return response.json() as Promise<JiraWorklog>;
+}
+
+/**
+ * Update an existing Jira worklog with new timing data from the given draft.
+ * draft.id must be the original Jira worklog id.
+ */
+export async function updateJiraWorklog(draft: DraftWorklog): Promise<void> {
+    const started = new Date(draft.start).toISOString().replace('Z', '+0000');
+    const timeSpentSeconds = draft.durationMinutes * 60;
+
+    console.log('[JIRA API] Updating worklog', { worklogId: draft.id, issueKey: draft.issueKey, started, timeSpentSeconds });
+
+    const response = await fetch(LOCAL_JIRA_WORKLOG_UPDATE_ENDPOINT, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issueKey: draft.issueKey, worklogId: draft.id, started, timeSpentSeconds }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Failed to update worklog ${draft.id}: ${response.status} ${errorText}`);
+    }
+}
+
+/**
+ * Delete a worklog in Jira.
+ * draft.id must be the original Jira worklog id.
+ */
+export async function deleteJiraWorklog(draft: DraftWorklog): Promise<void> {
+    console.log('[JIRA API] Deleting worklog', { worklogId: draft.id, issueKey: draft.issueKey });
+
+    const url = `${LOCAL_JIRA_WORKLOG_DELETE_ENDPOINT}?issueKey=${encodeURIComponent(draft.issueKey)}&worklogId=${encodeURIComponent(draft.id)}`;
+    const response = await fetch(url, { method: 'DELETE' });
+
+    if (!response.ok && response.status !== 204) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Failed to delete worklog ${draft.id}: ${response.status} ${errorText}`);
+    }
+}
+
+/**
+ * Invalidate the local cache file for a given week so the next fetch
+ * goes back to Jira instead of serving stale data.
+ * Best-effort — errors are swallowed.
+ */
+export async function invalidateWeekCache(weekStart: Date): Promise<void> {
+    const week = formatDate(weekStart);
+    try {
+        await fetch(`${LOCAL_JIRA_CACHE_INVALIDATE_ENDPOINT}?week=${week}`, { method: 'DELETE' });
+        console.log('[JIRA API] Cache invalidated for week', week);
+    } catch {
+        // best-effort
+    }
+}
+
+export interface ActiveIssue {
+    key: string;
+    summary: string;
+}
+
+/**
+ * Fetch all active issues assigned to the current Jira user.
+ * The result is cached server-side in .cache/active-issues.json.
+ */
+export async function fetchActiveIssues(): Promise<ActiveIssue[]> {
+    if (!isJiraConfigured()) {
+        return [];
+    }
+    console.log('[JIRA API] Fetching active issues');
+    try {
+        const response = await fetch(LOCAL_JIRA_ACTIVE_ISSUES_ENDPOINT);
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            console.warn('[JIRA API] Active issues fetch failed:', response.status, errorText);
+            return [];
+        }
+        const data = await response.json() as { issues: ActiveIssue[] };
+        console.log('[JIRA API] Active issues loaded:', data.issues.length);
+        return data.issues;
+    } catch (error) {
+        console.error('[JIRA API] Active issues fetch error', error);
+        return [];
+    }
+}
+
+/**
+ * Delete all server-side cache files (week caches + active-issues cache).
+ * Best-effort — errors are swallowed.
+ */
+export async function clearAllCache(): Promise<void> {
+    try {
+        await fetch(LOCAL_JIRA_CACHE_CLEAR_ALL_ENDPOINT, { method: 'DELETE' });
+        console.log('[JIRA API] All cache cleared');
+    } catch {
+        // best-effort
     }
 }

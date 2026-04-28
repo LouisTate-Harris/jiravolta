@@ -31,3 +31,5 @@ export interface IssueTotal {
     totalHours: number;
     dailyHours: number[];
 }
+
+export type IssueDisplayMode = 'name' | 'key';
