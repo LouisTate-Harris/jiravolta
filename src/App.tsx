@@ -16,6 +16,7 @@ import { WeekNavigation } from './components/WeekNavigation';
 import { StatusMatrix } from './components/StatusMatrix';
 import { InteractiveTimeline } from './components/InteractiveTimeline';
 import { ReviewPanel } from './components/ReviewPanel';
+import { LoadingOverlay } from './components/LoadingOverlay';
 import './App.css';
 
 function App() {
@@ -515,6 +516,7 @@ function App() {
           ✗ {approvalError}
         </div>
       )}
+      {loading && <LoadingOverlay />}
     </div>
   );
 }

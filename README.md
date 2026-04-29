@@ -1,6 +1,6 @@
 # JiraVolta
 
-A desktop-first web application for viewing and preparing Jira worklogs one week at a time. Built with React + TypeScript.
+A desktop-first web application for viewing and preparing Jira worklogs one week at a time.
 
 ## Overview
 
@@ -10,17 +10,15 @@ JiraVolta focuses on making timesheet edits fast and visual with:
 - **Review Panel**: Bulk approval system for pending changes
 - **Week Navigation**: Easy navigation between weeks
 
-## Features (MVP)
+## Features
 
 ✅ View worklogs in a visual timeline with 15-minute granularity  
 ✅ Create new worklogs by dragging on the timeline  
 ✅ Move and resize existing worklogs  
 ✅ Automatic snapping to 15-minute increments  
-✅ Overlap detection and prevention  
 ✅ Draft persistence in LocalStorage  
 ✅ Bulk approve/discard changes  
-✅ Week-by-week navigation  
-✅ Mock Jira data (no real API integration in MVP)
+✅ Week-by-week navigation
 
 ## Getting Started
 
@@ -35,14 +33,13 @@ JiraVolta focuses on making timesheet edits fast and visual with:
 # Install dependencies
 pnpm install
 
+# copy and `.env.example`
+cp .env.example .env.local
+
+# fill `.env.local` with the required credentials
+
 # Start development server
 pnpm dev
-
-# Build for production
-pnpm build
-
-# Preview production build
-pnpm preview
 ```
 
 The application will be available at `http://localhost:5173/`
@@ -78,76 +75,3 @@ The application will be available at `http://localhost:5173/`
 - **TypeScript 6** - Type safety
 - **Vite 8** - Build tool & dev server
 - **LocalStorage** - Draft persistence
-
-### Project Structure
-```
-src/
-├── components/          # React components
-│   ├── StatusMatrix.tsx     # Hours summary table
-│   ├── InteractiveTimeline.tsx  # Drag-and-drop timeline
-│   ├── WorklogBlock.tsx     # Individual worklog blocks
-│   ├── ReviewPanel.tsx      # Draft review sidebar
-│   └── WeekNavigation.tsx   # Week controls
-├── utils/              # Utility functions
-│   ├── dateUtils.ts        # Date manipulation
-│   ├── validationUtils.ts  # Overlap detection
-│   ├── storageUtils.ts     # LocalStorage handling
-│   └── mockData.ts         # Mock Jira data generator
-├── types.ts            # TypeScript type definitions
-└── App.tsx             # Main application component
-```
-
-### Key Concepts
-
-**Worklogs** are either:
-- `source: 'jira'` - Fetched from mock Jira API
-- `source: 'draft'` - Local changes pending approval
-
-**Drafts** track changes with `changeType`:
-- `create` - New worklog
-- `update` - Modified existing worklog
-- `delete` - Removed worklog
-
-**Validation** ensures:
-- Minimum 15-minute duration
-- Times snap to 15-minute boundaries
-- No overlapping worklogs on same day
-
-## Limitations (MVP)
-
-⚠️ Desktop only - no mobile/tablet optimization  
-⚠️ Mock data only - no real Jira API integration  
-⚠️ No authentication or user management  
-⚠️ No per-item approval (bulk only)  
-⚠️ No collaborative/multi-user features
-
-## Future Enhancements
-
-- Real Jira API integration with OAuth
-- Mobile-responsive design
-- Keyboard shortcuts for power users
-- Per-item draft approval
-- Undo/redo functionality
-- Worklog comments and descriptions
-- Time tracking statistics and reports
-
-## Development
-
-### Type Checking
-```bash
-pnpm tsc --noEmit
-```
-
-### Linting
-```bash
-pnpm eslint .
-```
-
-## License
-
-MIT
-
-## Acknowledgments
-
-Based on the specification in [spec.md](./spec.md)
-
