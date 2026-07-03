@@ -16,10 +16,24 @@ export interface WeekWorklogData {
     issueNameMap: Record<string, string>;
 }
 
-// Environment variables required by the local middleware.
-const JIRA_EMAIL = import.meta.env.VITE_JIRA_EMAIL;
-const JIRA_API_TOKEN = import.meta.env.VITE_JIRA_API_TOKEN;
-const JIRA_BASE_URL = import.meta.env.VITE_JIRA_BASE_URL;
+export interface JiraConfig {
+    configured: boolean;
+    baseUrl: string | null;
+}
+
+let _configCache: JiraConfig | null = null;
+
+export async function fetchJiraConfig(): Promise<JiraConfig> {
+    if (_configCache) return _configCache;
+    try {
+        const res = await fetch('/_local/jira-config');
+        _configCache = await res.json() as JiraConfig;
+    } catch {
+        _configCache = { configured: false, baseUrl: null };
+    }
+    return _configCache;
+}
+
 const LOCAL_JIRA_WORKLOGS_ENDPOINT = '/_local/jira-worklogs';
 const LOCAL_JIRA_TEST_ENDPOINT = '/_local/jira-test';
 const LOCAL_JIRA_WORKLOG_CREATE_ENDPOINT = '/_local/jira-worklog-create';
@@ -28,12 +42,10 @@ const LOCAL_JIRA_WORKLOG_DELETE_ENDPOINT = '/_local/jira-worklog-delete';
 const LOCAL_JIRA_CACHE_INVALIDATE_ENDPOINT = '/_local/jira-cache-invalidate';
 const LOCAL_JIRA_ACTIVE_ISSUES_ENDPOINT = '/_local/jira-active-issues';
 const LOCAL_JIRA_CACHE_CLEAR_ALL_ENDPOINT = '/_local/jira-cache-clear-all';
+const LOCAL_JIRA_ISSUE_ENDPOINT = '/_local/jira-issue';
 
-/**
- * Check if Jira is configured
- */
 export function isJiraConfigured(): boolean {
-    return !!(JIRA_BASE_URL && JIRA_EMAIL && JIRA_API_TOKEN);
+    return _configCache?.configured ?? false;
 }
 
 /**
@@ -50,7 +62,7 @@ export async function fetchWorklogsForWeek(
 ): Promise<WeekWorklogData> {
     if (!isJiraConfigured()) {
         console.warn('[JIRA API] Jira not configured, using mock data');
-        throw new Error('Jira not configured. Please set VITE_JIRA_BASE_URL, VITE_JIRA_EMAIL, and VITE_JIRA_API_TOKEN in .env.local');
+        throw new Error('Jira not configured. Please set JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN in .env.local');
     }
 
     const weekKey = formatDate(weekStart);
@@ -222,6 +234,29 @@ export async function fetchActiveIssues(): Promise<ActiveIssue[]> {
     } catch (error) {
         console.error('[JIRA API] Active issues fetch error', error);
         return [];
+    }
+}
+
+/**
+ * Fetch a single issue's summary by key. Returns null if Jira isn't
+ * configured, the request fails, or the issue has no summary — never throws.
+ */
+export async function fetchIssueSummary(key: string): Promise<string | null> {
+    if (!isJiraConfigured()) {
+        return null;
+    }
+    try {
+        const response = await fetch(`${LOCAL_JIRA_ISSUE_ENDPOINT}?key=${encodeURIComponent(key)}`);
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            console.warn('[JIRA API] Issue summary fetch failed:', response.status, errorText);
+            return null;
+        }
+        const data = await response.json() as { key: string; summary: string | null };
+        return data.summary ?? null;
+    } catch (error) {
+        console.error('[JIRA API] Issue summary fetch error', error);
+        return null;
     }
 }
 

@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    ports:
+      - "5173:5173"
+    env_file:
+      - .env.local
+    volumes:
+      - jiravolta-cache:/app/.cache
+
+volumes:
+  jiravolta-cache:

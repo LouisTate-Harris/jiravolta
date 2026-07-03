@@ -44,6 +44,38 @@ pnpm dev
 
 The application will be available at `http://localhost:5173/`
 
+## Running with Docker
+
+If you prefer not to install Node.js and pnpm locally, Docker Compose can run the app for you.
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) with the Compose plugin (included in Docker Desktop)
+
+### Setup
+
+```bash
+# Copy the example env file and fill in your Jira credentials (same as native setup)
+cp .env.example .env.local
+# edit .env.local
+```
+
+### Start
+
+```bash
+# First run — builds the image and starts the app
+docker compose up --build
+
+# Subsequent runs — image already built
+docker compose up
+```
+
+The app will be available at `http://localhost:5173/`.
+
+To stop: press `Ctrl-C`, then run `docker compose down` to remove the container.
+
+The Jira data cache is stored in a Docker named volume (`jiravolta-cache`) and persists across restarts. To wipe it: `docker compose down -v`.
+
 ## Usage
 
 ### Creating Worklogs

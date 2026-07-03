@@ -4,6 +4,8 @@ import { snapToQuarterHour, formatTime, calculateDuration } from '../utils/dateU
 import { checkForOverlaps } from '../utils/validationUtils';
 import { WorklogBlock } from './WorklogBlock';
 import './InteractiveTimeline.css';
+import type { TicketEntry } from '../utils/ticketListStorage';
+import { TicketListModal } from './TicketListModal';
 
 interface InteractiveTimelineProps {
     weekDays: Date[];
@@ -12,7 +14,6 @@ interface InteractiveTimelineProps {
     onUpdateWorklog: (id: string, updates: Partial<Worklog>) => void;
     onDeleteWorklog: (id: string) => void;
     onDuplicateWorklog: (id: string) => void;
-    availableIssues: string[];
     formatIssueLabel: (issueKey: string, maxLength?: number) => string;
     getIssueFullLabel: (issueKey: string) => string;
     startHour?: number;
@@ -21,6 +22,11 @@ interface InteractiveTimelineProps {
     onToggleSelection: (id: string, isMulti: boolean) => void;
     clipboardWorklogs: Worklog[];
     onPasteWorklogs: (dayIndex: number, cursorTime: Date) => void;
+    ticketList: TicketEntry[];
+    onTicketListChange: (list: TicketEntry[]) => void;
+    colorOverrideMap: Record<string, string>;
+    fetchIssueSummary: (key: string) => Promise<string | null>;
+    jiraConfigured: boolean;
 }
 
 interface DragState {
@@ -42,7 +48,6 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
     onUpdateWorklog,
     onDeleteWorklog,
     onDuplicateWorklog,
-    availableIssues,
     formatIssueLabel,
     getIssueFullLabel,
     startHour = 0,
@@ -51,11 +56,19 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
     onToggleSelection,
     clipboardWorklogs,
     onPasteWorklogs,
+    ticketList,
+    onTicketListChange,
+    colorOverrideMap,
+    fetchIssueSummary,
+    jiraConfigured,
 }) => {
     const [dragState, setDragState] = useState<DragState | null>(null);
     const [previewWorklog, setPreviewWorklog] = useState<Worklog | null>(null);
     const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
-    const [selectedIssue, setSelectedIssue] = useState<string>(availableIssues[0] || 'PROJ-101');
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedIssue, setSelectedIssue] = useState<string>(
+        () => ticketList[0]?.key ?? ''
+    );
     const timelineRef = useRef<HTMLDivElement>(null);
     const timelineContainerRef = useRef<HTMLDivElement>(null);
     const gridRef = useRef<HTMLDivElement>(null);
@@ -121,6 +134,19 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
         return () => window.removeEventListener('resize', updateDayColumnWidth);
     }, [weekDays.length]);
 
+    React.useEffect(() => {
+        const keys = ticketList.map(e => e.key);
+        if (keys.length === 0) {
+            setSelectedIssue('');
+            return;
+        }
+        setSelectedIssue(prev => keys.includes(prev) ? prev : keys[0]);
+    }, [ticketList]);
+
+    const handleTicketAdded = (key: string) => {
+        setSelectedIssue(key);
+    };
+
     // Ctrl+V: paste clipboard worklogs at the last hovered position
     React.useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -152,6 +178,7 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
     }, [actualStartHour]);
 
     const handleMouseDown = (e: React.MouseEvent, dayIndex: number) => {
+        if (!selectedIssue) return;
         if ((e.target as HTMLElement).classList.contains('worklog-block')) {
             return; // Let the block handle its own drag
         }
@@ -249,13 +276,27 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
             <div className="timeline-header">
                 <div className="issue-selector">
                     <label>New issue assigned to: </label>
-                    <select value={selectedIssue} onChange={(e) => setSelectedIssue(e.target.value)}>
-                        {availableIssues.map(issue => (
-                            <option key={issue} value={issue} title={getIssueFullLabel(issue)}>
-                                {formatIssueLabel(issue, 46)}
+                    <select
+                        value={selectedIssue}
+                        onChange={(e) => setSelectedIssue(e.target.value)}
+                        disabled={ticketList.length === 0}
+                    >
+                        {ticketList.length === 0 && (
+                            <option value="">— add tickets to list —</option>
+                        )}
+                        {ticketList.map(entry => (
+                            <option key={entry.key} value={entry.key} title={getIssueFullLabel(entry.key)}>
+                                {formatIssueLabel(entry.key, 46)}
                             </option>
                         ))}
                     </select>
+                    <button
+                        className="ticket-list-edit-btn"
+                        onClick={() => setIsModalOpen(true)}
+                        title="Edit ticket list"
+                    >
+                        ✎
+                    </button>
                 </div>
                 {overlapWarning && (
                     <div className="overlap-warning">{overlapWarning}</div>
@@ -336,6 +377,7 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                                     onToggleSelection={onToggleSelection}
                                     formatIssueLabel={formatIssueLabel}
                                     getIssueFullLabel={getIssueFullLabel}
+                                    colorOverrideMap={colorOverrideMap}
                                 />
                             ))}
 
@@ -364,6 +406,17 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                     ))}
                 </div>
             </div>
+            {isModalOpen && (
+                <TicketListModal
+                    ticketList={ticketList}
+                    onTicketListChange={onTicketListChange}
+                    onClose={() => setIsModalOpen(false)}
+                    getIssueFullLabel={getIssueFullLabel}
+                    onTicketAdded={handleTicketAdded}
+                    fetchIssueSummary={fetchIssueSummary}
+                    jiraConfigured={jiraConfigured}
+                />
+            )}
         </div>
     );
 };

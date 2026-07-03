@@ -20,6 +20,7 @@ interface WorklogBlockProps {
     onToggleSelection: (id: string, isMulti: boolean) => void;
     formatIssueLabel: (issueKey: string, maxLength?: number) => string;
     getIssueFullLabel: (issueKey: string) => string;
+    colorOverrideMap?: Record<string, string>;
 }
 
 const MINUTES_PER_PIXEL = 60 / 60; // Assuming 60px per hour
@@ -40,6 +41,7 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
     onToggleSelection,
     formatIssueLabel,
     getIssueFullLabel,
+    colorOverrideMap,
 }) => {
     const [isDragging, setIsDragging] = useState(false);
     const [isResizing, setIsResizing] = useState(false);
@@ -281,7 +283,7 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
     const top = timeToPixel(new Date(worklog.start));
     const height = worklog.durationMinutes / MINUTES_PER_PIXEL;
     const isDraft = worklog.source === 'draft';
-    const issueColor = getIssueColor(worklog.issueKey);
+    const issueColor = colorOverrideMap?.[worklog.issueKey] ?? getIssueColor(worklog.issueKey);
 
     return (
         <>

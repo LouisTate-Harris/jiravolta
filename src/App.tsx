@@ -9,8 +9,10 @@ import {
 } from './utils/dateUtils';
 import { fetchMockWorklogs } from './utils/mockData';
 import { loadDrafts, saveDrafts, clearDrafts } from './utils/storageUtils';
+import { loadTicketList, saveTicketList } from './utils/ticketListStorage';
+import type { TicketEntry } from './utils/ticketListStorage';
 import { mergeWorklogsAndDrafts } from './utils/validationUtils';
-import { fetchWorklogsForWeek, isJiraConfigured, createJiraWorklog, updateJiraWorklog, deleteJiraWorklog, invalidateWeekCache, fetchActiveIssues, clearAllCache } from './services/jiraService';
+import { fetchWorklogsForWeek, isJiraConfigured, fetchJiraConfig, createJiraWorklog, updateJiraWorklog, deleteJiraWorklog, invalidateWeekCache, fetchActiveIssues, fetchIssueSummary, clearAllCache } from './services/jiraService';
 import { getIssueLabel } from './utils/issueDisplayUtils';
 import { WeekNavigation } from './components/WeekNavigation';
 import { StatusMatrix } from './components/StatusMatrix';
@@ -20,7 +22,8 @@ import { LoadingOverlay } from './components/LoadingOverlay';
 import './App.css';
 
 function App() {
-  const jiraBaseUrl = import.meta.env.VITE_JIRA_BASE_URL as string | undefined;
+  const [jiraBaseUrl, setJiraBaseUrl] = useState<string | null>(null);
+  const [jiraConfigLoaded, setJiraConfigLoaded] = useState(false);
   const [currentWeek, setCurrentWeek] = useState<Date>(new Date());
   const [jiraWorklogs, setJiraWorklogs] = useState<Worklog[]>([]);
   const [drafts, setDrafts] = useState<DraftWorklog[]>([]);
@@ -36,6 +39,7 @@ function App() {
   const [issueDisplayMode, setIssueDisplayMode] = useState<IssueDisplayMode>('name');
   const [activeIssueMap, setActiveIssueMap] = useState<Record<string, string>>({});
   const [refreshKey, setRefreshKey] = useState(0);
+  const [ticketList, setTicketList] = useState<TicketEntry[]>(() => loadTicketList());
 
   const weekStart = useMemo(() => getWeekStart(currentWeek), [currentWeek]);
   const weekDays = useMemo(() => getWeekDays(currentWeek), [currentWeek]);
@@ -49,10 +53,15 @@ function App() {
   const allWorklogs = mergeWorklogsAndDrafts(jiraWorklogs, drafts);
 
   // Merge week worklogs + active issues into a unified sorted list for the dropdown
-  const mergedIssueNameMap = { ...activeIssueMap, ...issueNameMap };
-  const availableIssues = Array.from(
-    new Set([...Object.keys(activeIssueMap), ...allWorklogs.map(w => w.issueKey)])
-  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  const aliasOverrides = useMemo(
+    () => Object.fromEntries(ticketList.filter(e => e.alias).map(e => [e.key, e.alias!])),
+    [ticketList]
+  );
+  const mergedIssueNameMap = { ...activeIssueMap, ...issueNameMap, ...aliasOverrides };
+  const colorOverrideMap = useMemo(
+    () => Object.fromEntries(ticketList.filter(e => e.color).map(e => [e.key, e.color!])),
+    [ticketList]
+  );
 
   const formatIssueLabel = (issueKey: string, maxLength?: number) => {
     return getIssueLabel(issueKey, mergedIssueNameMap, issueDisplayMode, maxLength);
@@ -75,8 +84,17 @@ function App() {
     return `${browseBaseUrl}/${encodeURIComponent(issueKey)}`;
   };
 
-  // Load worklogs and drafts when week changes
+  // Fetch Jira config from the local middleware once on mount
   useEffect(() => {
+    fetchJiraConfig().then(config => {
+      setJiraBaseUrl(config.baseUrl);
+      setJiraConfigLoaded(true);
+    });
+  }, []);
+
+  // Load worklogs and drafts when week changes (waits for config to be ready)
+  useEffect(() => {
+    if (!jiraConfigLoaded) return;
     const loadWeekData = async () => {
       setLoading(true);
       setError(null);
@@ -118,11 +136,11 @@ function App() {
 
     loadWeekData();
     // Use formatDate to create stable dependency
-  }, [formatDate(weekStart), formatDate(weekEnd), refreshKey]);
+  }, [jiraConfigLoaded, formatDate(weekStart), formatDate(weekEnd), refreshKey]);
 
   // Load active issues once (cached server-side; re-fetched when refreshKey changes)
   useEffect(() => {
-    if (!isJiraConfigured()) return;
+    if (!jiraConfigLoaded || !isJiraConfigured()) return;
     fetchActiveIssues().then(issues => {
       const map: Record<string, string> = {};
       for (const issue of issues) {
@@ -130,7 +148,7 @@ function App() {
       }
       setActiveIssueMap(map);
     });
-  }, [refreshKey]);
+  }, [jiraConfigLoaded, refreshKey]);
 
   // Save drafts to LocalStorage whenever they change
   useEffect(() => {
@@ -206,6 +224,11 @@ function App() {
 
   const handleToday = () => {
     setCurrentWeek(new Date());
+  };
+
+  const handleTicketListChange = (newList: TicketEntry[]) => {
+    setTicketList(newList);
+    saveTicketList(newList);
   };
 
   const handleClearCache = async () => {
@@ -482,7 +505,6 @@ function App() {
             onUpdateWorklog={handleUpdateWorklog}
             onDeleteWorklog={handleDeleteWorklog}
             onDuplicateWorklog={handleDuplicateWorklog}
-            availableIssues={availableIssues.length > 0 ? availableIssues : ['PROJ-101']}
             formatIssueLabel={formatIssueLabel}
             getIssueFullLabel={getIssueFullLabel}
             startHour={6}
@@ -491,6 +513,11 @@ function App() {
             onToggleSelection={handleToggleSelection}
             clipboardWorklogs={clipboardWorklogs}
             onPasteWorklogs={handlePasteWorklogs}
+            ticketList={ticketList}
+            onTicketListChange={handleTicketListChange}
+            colorOverrideMap={colorOverrideMap}
+            fetchIssueSummary={fetchIssueSummary}
+            jiraConfigured={isJiraConfigured()}
           />
         )}
       </div>

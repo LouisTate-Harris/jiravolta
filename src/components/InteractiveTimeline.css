@@ -187,3 +187,20 @@
     color: #999;
     margin-top: 2px;
 }
+
+.ticket-list-edit-btn {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 0.375rem 0.5rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: #555;
+    line-height: 1;
+}
+
+.ticket-list-edit-btn:hover {
+    background: #f0f0f0;
+    border-color: #999;
+    color: #333;
+}

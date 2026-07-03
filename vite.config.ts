@@ -66,10 +66,17 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
     name: 'jira-local-cache',
     configureServer(server: ViteDevServer) {
       server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        if (req.url?.startsWith('/_local/jira-config')) {
+          const configured = !!(env.JIRA_BASE_URL && env.JIRA_EMAIL && env.JIRA_API_TOKEN)
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ configured, baseUrl: env.JIRA_BASE_URL || null }))
+          return
+        }
+
         if (req.url?.startsWith('/_local/jira-test')) {
-          const baseUrl = env.VITE_JIRA_BASE_URL
-          const email = env.VITE_JIRA_EMAIL
-          const token = env.VITE_JIRA_API_TOKEN
+          const baseUrl = env.JIRA_BASE_URL
+          const email = env.JIRA_EMAIL
+          const token = env.JIRA_API_TOKEN
 
           if (!baseUrl || !email || !token) {
             res.statusCode = 503
@@ -113,9 +120,9 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
 
         // ── POST /_local/jira-worklog-create ────────────────────────────────
         if (req.method === 'POST' && req.url?.startsWith('/_local/jira-worklog-create')) {
-          const baseUrl = env.VITE_JIRA_BASE_URL
-          const email = env.VITE_JIRA_EMAIL
-          const token = env.VITE_JIRA_API_TOKEN
+          const baseUrl = env.JIRA_BASE_URL
+          const email = env.JIRA_EMAIL
+          const token = env.JIRA_API_TOKEN
           if (!baseUrl || !email || !token) {
             res.statusCode = 503
             res.end(JSON.stringify({ error: 'Jira env vars not configured' }))
@@ -147,9 +154,9 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
 
         // ── PUT /_local/jira-worklog-update ─────────────────────────────────
         if (req.method === 'PUT' && req.url?.startsWith('/_local/jira-worklog-update')) {
-          const baseUrl = env.VITE_JIRA_BASE_URL
-          const email = env.VITE_JIRA_EMAIL
-          const token = env.VITE_JIRA_API_TOKEN
+          const baseUrl = env.JIRA_BASE_URL
+          const email = env.JIRA_EMAIL
+          const token = env.JIRA_API_TOKEN
           if (!baseUrl || !email || !token) {
             res.statusCode = 503
             res.end(JSON.stringify({ error: 'Jira env vars not configured' }))
@@ -184,9 +191,9 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
 
         // ── DELETE /_local/jira-worklog-delete?issueKey=...&worklogId=... ───
         if (req.method === 'DELETE' && req.url?.startsWith('/_local/jira-worklog-delete')) {
-          const baseUrl = env.VITE_JIRA_BASE_URL
-          const email = env.VITE_JIRA_EMAIL
-          const token = env.VITE_JIRA_API_TOKEN
+          const baseUrl = env.JIRA_BASE_URL
+          const email = env.JIRA_EMAIL
+          const token = env.JIRA_API_TOKEN
           if (!baseUrl || !email || !token) {
             res.statusCode = 503
             res.end(JSON.stringify({ error: 'Jira env vars not configured' }))
@@ -253,6 +260,45 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
           return
         }
 
+        // ── GET /_local/jira-issue?key=CAN-1234 ──────────────────────────────
+        if (req.method === 'GET' && req.url?.startsWith('/_local/jira-issue')) {
+          const baseUrl = env.JIRA_BASE_URL
+          const email = env.JIRA_EMAIL
+          const token = env.JIRA_API_TOKEN
+          if (!baseUrl || !email || !token) {
+            res.statusCode = 503
+            res.end(JSON.stringify({ error: 'Jira env vars not configured' }))
+            return
+          }
+          const issueUrl = new URL(req.url, 'http://localhost')
+          const key = issueUrl.searchParams.get('key')
+          if (!key) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ error: 'Missing key query param' }))
+            return
+          }
+          try {
+            const authHeader = `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`
+            const jiraRes = await fetch(
+              `${baseUrl}/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary`,
+              { headers: { 'Authorization': authHeader, 'Accept': 'application/json' } },
+            )
+            if (!jiraRes.ok) {
+              const errorText = await jiraRes.text().catch(() => jiraRes.statusText)
+              res.statusCode = jiraRes.status
+              res.end(JSON.stringify({ error: `Jira issue fetch failed: ${jiraRes.status} ${errorText}` }))
+              return
+            }
+            const issueData = await jiraRes.json() as { key: string; fields?: { summary?: string } }
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ key: issueData.key, summary: issueData.fields?.summary ?? null }))
+          } catch (err) {
+            res.statusCode = 500
+            res.end(JSON.stringify({ error: String(err) }))
+          }
+          return
+        }
+
         // ── GET /_local/jira-active-issues ───────────────────────────────────
         if (req.method === 'GET' && req.url?.startsWith('/_local/jira-active-issues')) {
           const activeCacheDir = path.resolve('.cache')
@@ -266,9 +312,9 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
             return
           }
 
-          const activeBaseUrl = env.VITE_JIRA_BASE_URL
-          const activeEmail = env.VITE_JIRA_EMAIL
-          const activeToken = env.VITE_JIRA_API_TOKEN
+          const activeBaseUrl = env.JIRA_BASE_URL
+          const activeEmail = env.JIRA_EMAIL
+          const activeToken = env.JIRA_API_TOKEN
 
           if (!activeBaseUrl || !activeEmail || !activeToken) {
             res.statusCode = 503
@@ -406,9 +452,9 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
           console.log(`[jira-local-cache] STALE EMPTY cache .cache/${week}.json — rebuilding`)
         }
 
-        const baseUrl = env.VITE_JIRA_BASE_URL
-        const email = env.VITE_JIRA_EMAIL
-        const token = env.VITE_JIRA_API_TOKEN
+        const baseUrl = env.JIRA_BASE_URL
+        const email = env.JIRA_EMAIL
+        const token = env.JIRA_API_TOKEN
 
         if (!baseUrl || !email || !token) {
           res.statusCode = 503
