@@ -16,6 +16,7 @@ interface InteractiveTimelineProps {
     onDuplicateWorklog: (id: string) => void;
     formatIssueLabel: (issueKey: string, maxLength?: number) => string;
     getIssueFullLabel: (issueKey: string) => string;
+    isIssueAliased: (issueKey: string) => boolean;
     startHour?: number;
     endHour?: number;
     selectedWorklogIds: Set<string>;
@@ -27,6 +28,7 @@ interface InteractiveTimelineProps {
     colorOverrideMap: Record<string, string>;
     fetchIssueSummary: (key: string) => Promise<string | null>;
     jiraConfigured: boolean;
+    activeIssues: Record<string, string>;
 }
 
 interface DragState {
@@ -50,6 +52,7 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
     onDuplicateWorklog,
     formatIssueLabel,
     getIssueFullLabel,
+    isIssueAliased,
     startHour = 0,
     endHour = 23,
     selectedWorklogIds,
@@ -61,6 +64,7 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
     colorOverrideMap,
     fetchIssueSummary,
     jiraConfigured,
+    activeIssues,
 }) => {
     const [dragState, setDragState] = useState<DragState | null>(null);
     const [previewWorklog, setPreviewWorklog] = useState<Worklog | null>(null);
@@ -285,7 +289,12 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                             <option value="">— add tickets to list —</option>
                         )}
                         {ticketList.map(entry => (
-                            <option key={entry.key} value={entry.key} title={getIssueFullLabel(entry.key)}>
+                            <option
+                                key={entry.key}
+                                value={entry.key}
+                                title={getIssueFullLabel(entry.key)}
+                                style={isIssueAliased(entry.key) ? { fontStyle: 'italic' } : undefined}
+                            >
                                 {formatIssueLabel(entry.key, 46)}
                             </option>
                         ))}
@@ -377,6 +386,7 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                                     onToggleSelection={onToggleSelection}
                                     formatIssueLabel={formatIssueLabel}
                                     getIssueFullLabel={getIssueFullLabel}
+                                    isIssueAliased={isIssueAliased}
                                     colorOverrideMap={colorOverrideMap}
                                 />
                             ))}
@@ -391,7 +401,9 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                                 >
                                     <div className="worklog-content">
                                         <div className="worklog-issue" title={getIssueFullLabel(previewWorklog.issueKey)}>
-                                            {formatIssueLabel(previewWorklog.issueKey, 26)}
+                                            <span className={isIssueAliased(previewWorklog.issueKey) ? 'issue-alias-name' : undefined}>
+                                                {formatIssueLabel(previewWorklog.issueKey, 26)}
+                                            </span>
                                         </div>
                                         <div className="worklog-time">
                                             {formatTime(new Date(previewWorklog.start))} - {formatTime(new Date(previewWorklog.end))}
@@ -415,6 +427,7 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
                     onTicketAdded={handleTicketAdded}
                     fetchIssueSummary={fetchIssueSummary}
                     jiraConfigured={jiraConfigured}
+                    activeIssues={activeIssues}
                 />
             )}
         </div>

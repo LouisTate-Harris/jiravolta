@@ -10,6 +10,7 @@ interface StatusMatrixProps {
     error?: string | null;
     formatIssueLabel: (issueKey: string, maxLength?: number) => string;
     getIssueFullLabel: (issueKey: string) => string;
+    isIssueAliased: (issueKey: string) => boolean;
     getIssueUrl: (issueKey: string) => string | null;
 }
 
@@ -66,6 +67,7 @@ export const StatusMatrix: React.FC<StatusMatrixProps> = ({
     error = null,
     formatIssueLabel,
     getIssueFullLabel,
+    isIssueAliased,
     getIssueUrl,
 }) => {
     const matrixData = calculateMatrixData(worklogs, weekDays);
@@ -119,10 +121,14 @@ export const StatusMatrix: React.FC<StatusMatrixProps> = ({
                                         target="_blank"
                                         rel="noopener noreferrer"
                                     >
-                                        {formatIssueLabel(issueKey, 34)}
+                                        <span className={isIssueAliased(issueKey) ? 'issue-alias-name' : undefined}>
+                                            {formatIssueLabel(issueKey, 34)}
+                                        </span>
                                     </a>
                                 ) : (
-                                    formatIssueLabel(issueKey, 34)
+                                    <span className={isIssueAliased(issueKey) ? 'issue-alias-name' : undefined}>
+                                        {formatIssueLabel(issueKey, 34)}
+                                    </span>
                                 )}
                             </td>
                             {weekDays.map((_, dayIndex) => {

@@ -10,7 +10,7 @@ interface WeekNavigationProps {
     onToday: () => void;
     issueDisplayMode: IssueDisplayMode;
     onIssueDisplayModeChange: (mode: IssueDisplayMode) => void;
-    onClearCache?: () => void;
+    onOpenClearCache?: () => void;
 }
 
 export const WeekNavigation: React.FC<WeekNavigationProps> = ({
@@ -20,7 +20,7 @@ export const WeekNavigation: React.FC<WeekNavigationProps> = ({
     onToday,
     issueDisplayMode,
     onIssueDisplayModeChange,
-    onClearCache,
+    onOpenClearCache,
 }) => {
     const weekStart = getWeekStart(currentWeek);
     const weekEnd = getWeekEnd(currentWeek);
@@ -59,9 +59,9 @@ export const WeekNavigation: React.FC<WeekNavigationProps> = ({
                 <button onClick={onNextWeek} className="nav-btn">
                     Next Week →
                 </button>
-                {onClearCache && (
-                    <button onClick={onClearCache} className="nav-btn clear-cache-btn" title="Delete all server-side cache files and re-fetch from Jira">
-                        Clear Cache
+                {onOpenClearCache && (
+                    <button onClick={onOpenClearCache} className="nav-btn clear-cache-btn" title="Refresh cache">
+                        🗑️
                     </button>
                 )}
             </div>

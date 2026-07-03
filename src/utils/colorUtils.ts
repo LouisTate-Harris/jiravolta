@@ -1,25 +1,25 @@
 /**
  * Color palette utility for issue-based worklog coloring
- * Generates 15 visually distinct colors using HSL color space
+ * Uses a set of visually distinct colors that vary in hue, saturation and
+ * lightness (not just hue) so adjacent entries remain easy to tell apart.
  */
 
-// Generate 15 distinct colors with good saturation and lightness for readability
 const COLOR_PALETTE = [
-    'hsl(0, 70%, 75%)',     // Red
-    'hsl(25, 70%, 75%)',    // Orange
-    'hsl(50, 70%, 75%)',    // Yellow
-    'hsl(75, 70%, 75%)',    // Yellow-Green
-    'hsl(100, 70%, 75%)',   // Green
-    'hsl(150, 70%, 75%)',   // Teal
-    'hsl(180, 70%, 75%)',   // Cyan
-    'hsl(200, 70%, 75%)',   // Light Blue
-    'hsl(220, 70%, 75%)',   // Blue
-    'hsl(250, 70%, 75%)',   // Indigo
-    'hsl(280, 70%, 75%)',   // Purple
-    'hsl(300, 70%, 75%)',   // Magenta
-    'hsl(320, 70%, 75%)',   // Pink
-    'hsl(340, 70%, 75%)',   // Rose
-    'hsl(360, 70%, 75%)',   // Red-Pink
+    'hsl(0, 65%, 70%)',     // Red
+    'hsl(210, 60%, 65%)',   // Blue
+    'hsl(35, 60%, 55%)',    // Brown
+    'hsl(130, 45%, 60%)',   // Green
+    'hsl(0, 0%, 65%)',      // Gray
+    'hsl(45, 90%, 65%)',    // Yellow
+    'hsl(280, 45%, 65%)',   // Purple
+    'hsl(20, 75%, 60%)',    // Orange
+    'hsl(190, 55%, 55%)',   // Teal
+    'hsl(330, 55%, 70%)',   // Pink
+    'hsl(80, 40%, 50%)',    // Olive
+    'hsl(250, 50%, 75%)',   // Lavender
+    'hsl(15, 45%, 40%)',    // Dark Brown
+    'hsl(170, 35%, 75%)',   // Mint
+    'hsl(0, 0%, 35%)',      // Dark Gray
 ];
 
 /**
@@ -49,12 +49,13 @@ export function getIssueColor(issueKey: string): string {
 
 /**
  * Get text color (black or white) that contrasts well with the background
- * @param backgroundColor - HSL color string
- * @returns 'black' or 'white'
+ * @param backgroundColor - HSL color string, e.g. "hsl(210, 60%, 65%)"
+ * @returns '#000000' or '#ffffff'
  */
-export function getContrastColor(_backgroundColor: string): string {
-    // For our palette with 70% saturation and 75% lightness, black text works well
-    return '#000000';
+export function getContrastColor(backgroundColor: string): string {
+    const match = backgroundColor.match(/hsl\(\s*[\d.]+,\s*[\d.]+%,\s*([\d.]+)%\s*\)/);
+    const lightness = match ? parseFloat(match[1]) : 75;
+    return lightness < 55 ? '#ffffff' : '#000000';
 }
 
 /**

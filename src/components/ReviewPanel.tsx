@@ -11,6 +11,7 @@ interface ReviewPanelProps {
     onDiscardAll: () => void;
     formatIssueLabel: (issueKey: string, maxLength?: number) => string;
     getIssueFullLabel: (issueKey: string) => string;
+    isIssueAliased: (issueKey: string) => boolean;
 }
 
 export const ReviewPanel: React.FC<ReviewPanelProps> = ({
@@ -21,6 +22,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
     onDiscardAll,
     formatIssueLabel,
     getIssueFullLabel,
+    isIssueAliased,
 }) => {
     const getChangeTypeLabel = (changeType: string): string => {
         switch (changeType) {
@@ -74,7 +76,9 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                                     </div>
                                     <div className="draft-details">
                                         <div className="draft-issue" title={getIssueFullLabel(draft.issueKey)}>
-                                            {formatIssueLabel(draft.issueKey, 38)}
+                                            <span className={isIssueAliased(draft.issueKey) ? 'issue-alias-name' : undefined}>
+                                                {formatIssueLabel(draft.issueKey, 38)}
+                                            </span>
                                         </div>
                                         <div className="draft-date">
                                             {formatDate(new Date(draft.start))}

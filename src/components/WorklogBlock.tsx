@@ -20,6 +20,7 @@ interface WorklogBlockProps {
     onToggleSelection: (id: string, isMulti: boolean) => void;
     formatIssueLabel: (issueKey: string, maxLength?: number) => string;
     getIssueFullLabel: (issueKey: string) => string;
+    isIssueAliased: (issueKey: string) => boolean;
     colorOverrideMap?: Record<string, string>;
 }
 
@@ -41,6 +42,7 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
     onToggleSelection,
     formatIssueLabel,
     getIssueFullLabel,
+    isIssueAliased,
     colorOverrideMap,
 }) => {
     const [isDragging, setIsDragging] = useState(false);
@@ -309,7 +311,11 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
                 title={`${getIssueFullLabel(worklog.issueKey)} (${worklog.issueKey})\n${formatTime(new Date(worklog.start))} - ${formatTime(new Date(worklog.end))}\n${worklog.durationMinutes}m`}
             >
                 <div className="worklog-content">
-                    <div className="worklog-issue">{formatIssueLabel(worklog.issueKey, 22)}</div>
+                    <div className="worklog-issue">
+                        <span className={isIssueAliased(worklog.issueKey) ? 'issue-alias-name' : undefined}>
+                            {formatIssueLabel(worklog.issueKey, 22)}
+                        </span>
+                    </div>
                     {height > 30 && (
                         <>
                             <div className="worklog-time">

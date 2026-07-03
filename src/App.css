@@ -39,3 +39,7 @@
     opacity: 1;
   }
 }
+
+.issue-alias-name {
+  font-style: italic;
+}

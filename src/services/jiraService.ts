@@ -260,14 +260,21 @@ export async function fetchIssueSummary(key: string): Promise<string | null> {
     }
 }
 
+export type CacheScope = 'worklogs' | 'active-issues' | 'ticket-list';
+
 /**
- * Delete all server-side cache files (week caches + active-issues cache).
+ * Delete the given server-side cache file(s). Omit `scopes` to clear everything
+ * (week worklog caches, the active-issues cache, and the ticket list cache).
  * Best-effort — errors are swallowed.
  */
-export async function clearAllCache(): Promise<void> {
+export async function clearCache(scopes?: CacheScope[]): Promise<void> {
     try {
-        await fetch(LOCAL_JIRA_CACHE_CLEAR_ALL_ENDPOINT, { method: 'DELETE' });
-        console.log('[JIRA API] All cache cleared');
+        const params = new URLSearchParams();
+        (scopes ?? []).forEach(scope => params.append('scope', scope));
+        const query = params.toString();
+        const url = query ? `${LOCAL_JIRA_CACHE_CLEAR_ALL_ENDPOINT}?${query}` : LOCAL_JIRA_CACHE_CLEAR_ALL_ENDPOINT;
+        await fetch(url, { method: 'DELETE' });
+        console.log('[JIRA API] Cache cleared', scopes ?? 'all');
     } catch {
         // best-effort
     }

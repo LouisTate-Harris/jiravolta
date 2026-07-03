@@ -94,6 +94,26 @@
     background: #0d47a1;
 }
 
+.clear-cache-btn {
+    padding: 0.4rem !important;
+    font-size: 18px !important;
+    background: transparent !important;
+    color: #ff9800 !important;
+    border: none !important;
+    min-width: unset !important;
+    cursor: pointer !important;
+    transition: transform 0.2s, opacity 0.2s !important;
+}
+
+.clear-cache-btn:hover {
+    transform: scale(1.2);
+    opacity: 0.8;
+}
+
+.clear-cache-btn:active {
+    transform: scale(0.95);
+}
+
 @media (max-width: 900px) {
     .week-navigation {
         flex-direction: column;

@@ -244,19 +244,69 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
           return
         }
 
-        // ── DELETE /_local/jira-cache-clear-all ──────────────────────────────
+        // ── DELETE /_local/jira-cache-clear-all?scope=worklogs|active-issues|ticket-list ──
+        // Repeat the ?scope= param to clear multiple caches; omit it to clear everything.
         if (req.method === 'DELETE' && req.url?.startsWith('/_local/jira-cache-clear-all')) {
+          const clearUrl = new URL(req.url, 'http://localhost')
+          const requestedScopes = clearUrl.searchParams.getAll('scope')
+          const scopes = requestedScopes.length > 0
+            ? requestedScopes
+            : ['worklogs', 'active-issues', 'ticket-list']
           const dirPath = path.resolve('.cache')
-          if (fs.existsSync(dirPath)) {
+
+          if (scopes.includes('worklogs') && fs.existsSync(dirPath)) {
             for (const file of fs.readdirSync(dirPath)) {
-              if (file.endsWith('.json')) {
+              if (file.endsWith('.json') && file !== 'active-issues.json' && file !== 'ticket-list.json') {
                 fs.rmSync(path.join(dirPath, file))
               }
             }
-            console.log('[jira-local-cache] Cleared all cache files')
+            const worklogDir = path.join(dirPath, 'worklogs')
+            if (fs.existsSync(worklogDir)) {
+              fs.rmSync(worklogDir, { recursive: true, force: true })
+            }
           }
+
+          if (scopes.includes('active-issues')) {
+            const activeIssuesFile = path.join(dirPath, 'active-issues.json')
+            if (fs.existsSync(activeIssuesFile)) fs.rmSync(activeIssuesFile)
+          }
+
+          if (scopes.includes('ticket-list')) {
+            const ticketListFile = path.join(dirPath, 'ticket-list.json')
+            if (fs.existsSync(ticketListFile)) fs.rmSync(ticketListFile)
+          }
+
+          console.log(`[jira-local-cache] Cleared cache (scope=${scopes.join(',')})`)
           res.statusCode = 204
           res.end()
+          return
+        }
+
+        // ── GET /_local/jira-ticket-list ─────────────────────────────────────
+        if (req.method === 'GET' && req.url?.startsWith('/_local/jira-ticket-list')) {
+          const ticketListFile = path.join(path.resolve('.cache'), 'ticket-list.json')
+          res.setHeader('Content-Type', 'application/json')
+          if (fs.existsSync(ticketListFile)) {
+            res.end(fs.readFileSync(ticketListFile, 'utf-8'))
+          } else {
+            res.end('[]')
+          }
+          return
+        }
+
+        // ── PUT /_local/jira-ticket-list ─────────────────────────────────────
+        if (req.method === 'PUT' && req.url?.startsWith('/_local/jira-ticket-list')) {
+          try {
+            const body = await readBody(req)
+            const cacheDir = path.resolve('.cache')
+            fs.mkdirSync(cacheDir, { recursive: true })
+            fs.writeFileSync(path.join(cacheDir, 'ticket-list.json'), body)
+            res.statusCode = 204
+            res.end()
+          } catch (err) {
+            res.statusCode = 500
+            res.end(JSON.stringify({ error: String(err) }))
+          }
           return
         }
 

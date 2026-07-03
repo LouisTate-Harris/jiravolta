@@ -12,13 +12,15 @@ import { loadDrafts, saveDrafts, clearDrafts } from './utils/storageUtils';
 import { loadTicketList, saveTicketList } from './utils/ticketListStorage';
 import type { TicketEntry } from './utils/ticketListStorage';
 import { mergeWorklogsAndDrafts } from './utils/validationUtils';
-import { fetchWorklogsForWeek, isJiraConfigured, fetchJiraConfig, createJiraWorklog, updateJiraWorklog, deleteJiraWorklog, invalidateWeekCache, fetchActiveIssues, fetchIssueSummary, clearAllCache } from './services/jiraService';
+import { fetchWorklogsForWeek, isJiraConfigured, fetchJiraConfig, createJiraWorklog, updateJiraWorklog, deleteJiraWorklog, invalidateWeekCache, fetchActiveIssues, fetchIssueSummary, clearCache } from './services/jiraService';
+import type { CacheScope } from './services/jiraService';
 import { getIssueLabel } from './utils/issueDisplayUtils';
 import { WeekNavigation } from './components/WeekNavigation';
 import { StatusMatrix } from './components/StatusMatrix';
 import { InteractiveTimeline } from './components/InteractiveTimeline';
 import { ReviewPanel } from './components/ReviewPanel';
 import { LoadingOverlay } from './components/LoadingOverlay';
+import { ClearCacheModal } from './components/ClearCacheModal';
 import './App.css';
 
 function App() {
@@ -39,7 +41,8 @@ function App() {
   const [issueDisplayMode, setIssueDisplayMode] = useState<IssueDisplayMode>('name');
   const [activeIssueMap, setActiveIssueMap] = useState<Record<string, string>>({});
   const [refreshKey, setRefreshKey] = useState(0);
-  const [ticketList, setTicketList] = useState<TicketEntry[]>(() => loadTicketList());
+  const [ticketList, setTicketList] = useState<TicketEntry[]>([]);
+  const [clearCacheModalOpen, setClearCacheModalOpen] = useState(false);
 
   const weekStart = useMemo(() => getWeekStart(currentWeek), [currentWeek]);
   const weekDays = useMemo(() => getWeekDays(currentWeek), [currentWeek]);
@@ -71,6 +74,10 @@ function App() {
     return mergedIssueNameMap[issueKey] || issueKey;
   };
 
+  const isIssueAliased = (issueKey: string) => {
+    return Boolean(aliasOverrides[issueKey]) && issueDisplayMode === 'name';
+  };
+
   const getIssueUrl = (issueKey: string) => {
     if (!jiraBaseUrl) {
       return null;
@@ -91,6 +98,12 @@ function App() {
       setJiraConfigLoaded(true);
     });
   }, []);
+
+  // Load the ticket list from its server-side cache file once on mount
+  // (and again after a "ticket-list" cache clear via refreshKey)
+  useEffect(() => {
+    loadTicketList().then(setTicketList);
+  }, [refreshKey]);
 
   // Load worklogs and drafts when week changes (waits for config to be ready)
   useEffect(() => {
@@ -231,8 +244,8 @@ function App() {
     saveTicketList(newList);
   };
 
-  const handleClearCache = async () => {
-    await clearAllCache();
+  const handleClearCache = async (scopes: CacheScope[]) => {
+    await clearCache(scopes);
     setRefreshKey(k => k + 1);
   };
 
@@ -470,7 +483,7 @@ function App() {
         onToday={handleToday}
         issueDisplayMode={issueDisplayMode}
         onIssueDisplayModeChange={setIssueDisplayMode}
-        onClearCache={isJiraConfigured() ? handleClearCache : undefined}
+        onOpenClearCache={isJiraConfigured() ? () => setClearCacheModalOpen(true) : undefined}
       />
 
       {usingMockData && (
@@ -494,6 +507,7 @@ function App() {
           error={error}
           formatIssueLabel={formatIssueLabel}
           getIssueFullLabel={getIssueFullLabel}
+          isIssueAliased={isIssueAliased}
           getIssueUrl={getIssueUrl}
         />
 
@@ -507,6 +521,7 @@ function App() {
             onDuplicateWorklog={handleDuplicateWorklog}
             formatIssueLabel={formatIssueLabel}
             getIssueFullLabel={getIssueFullLabel}
+            isIssueAliased={isIssueAliased}
             startHour={6}
             endHour={20}
             selectedWorklogIds={selectedWorklogIds}
@@ -518,6 +533,7 @@ function App() {
             colorOverrideMap={colorOverrideMap}
             fetchIssueSummary={fetchIssueSummary}
             jiraConfigured={isJiraConfigured()}
+            activeIssues={activeIssueMap}
           />
         )}
       </div>
@@ -530,6 +546,7 @@ function App() {
         onDiscardAll={handleDiscardAll}
         formatIssueLabel={formatIssueLabel}
         getIssueFullLabel={getIssueFullLabel}
+        isIssueAliased={isIssueAliased}
       />
 
       {showSuccess && (
@@ -544,6 +561,13 @@ function App() {
         </div>
       )}
       {loading && <LoadingOverlay />}
+
+      {clearCacheModalOpen && (
+        <ClearCacheModal
+          onClose={() => setClearCacheModalOpen(false)}
+          onClear={handleClearCache}
+        />
+      )}
     </div>
   );
 }

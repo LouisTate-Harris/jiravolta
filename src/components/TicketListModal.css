@@ -49,6 +49,64 @@
     color: #333;
 }
 
+.ticket-modal-active {
+    padding: 0.75rem 1.25rem 0.5rem;
+}
+
+.ticket-modal-active-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #888;
+    margin-bottom: 0.4rem;
+}
+
+.ticket-modal-active-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    max-height: 6.5rem;
+    overflow-y: auto;
+}
+
+.ticket-modal-active-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    max-width: 100%;
+    padding: 0.25rem 0.5rem;
+    background: #f0f4fb;
+    border: 1px solid #d5e0f2;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: #333;
+}
+
+.ticket-modal-active-chip:hover:not(:disabled) {
+    background: #e2ecfb;
+    border-color: #0052cc;
+}
+
+.ticket-modal-active-chip:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.ticket-modal-active-chip-key {
+    font-weight: 600;
+    color: #0052cc;
+    flex-shrink: 0;
+}
+
+.ticket-modal-active-chip-summary {
+    color: #555;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .ticket-modal-add {
     display: flex;
     gap: 0.5rem;

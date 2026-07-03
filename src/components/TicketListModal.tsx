@@ -11,6 +11,7 @@ interface TicketListModalProps {
     onTicketAdded: (key: string) => void;
     fetchIssueSummary: (key: string) => Promise<string | null>;
     jiraConfigured: boolean;
+    activeIssues: Record<string, string>;
 }
 
 const BROWSE_URL_PATTERN = /\/browse\/([A-Za-z]+-\d+)/i;
@@ -23,6 +24,7 @@ export const TicketListModal: React.FC<TicketListModalProps> = ({
     onTicketAdded,
     fetchIssueSummary,
     jiraConfigured,
+    activeIssues,
 }) => {
     const [localList, setLocalList] = useState<TicketEntry[]>(ticketList);
     const [addInput, setAddInput] = useState('');
@@ -33,21 +35,18 @@ export const TicketListModal: React.FC<TicketListModalProps> = ({
     const dragIndexRef = useRef<number | null>(null);
     const localListRef = useRef<TicketEntry[]>(localList);
 
-    const handleAdd = async () => {
-        const trimmed = addInput.trim();
-        if (!trimmed) return;
-        const match = trimmed.match(BROWSE_URL_PATTERN);
-        if (!match) {
-            setAddError('Enter a valid Jira ticket URL');
-            return;
-        }
-        const key = match[1].toUpperCase();
+    // Add a ticket by key. If the summary is already known (e.g. picked from the
+    // active issues list) it's used directly; otherwise it's fetched from Jira.
+    const addTicket = async (key: string, knownSummary?: string) => {
         const isDuplicate = localList.some(e => e.key === key);
 
         if (!isDuplicate) {
-            setIsFetchingName(true);
-            const summary = await fetchIssueSummary(key);
-            setIsFetchingName(false);
+            let summary = knownSummary ?? null;
+            if (knownSummary === undefined) {
+                setIsFetchingName(true);
+                summary = await fetchIssueSummary(key);
+                setIsFetchingName(false);
+            }
             const newList = [...localList, { key, alias: summary ?? undefined }];
             setLocalList(newList);
             localListRef.current = newList;
@@ -58,6 +57,17 @@ export const TicketListModal: React.FC<TicketListModalProps> = ({
         }
 
         onTicketAdded(key);
+    };
+
+    const handleAdd = async () => {
+        const trimmed = addInput.trim();
+        if (!trimmed) return;
+        const match = trimmed.match(BROWSE_URL_PATTERN);
+        if (!match) {
+            setAddError('Enter a valid Jira ticket URL');
+            return;
+        }
+        await addTicket(match[1].toUpperCase());
         setAddInput('');
         setAddError(null);
     };
@@ -119,6 +129,11 @@ export const TicketListModal: React.FC<TicketListModalProps> = ({
 
     const colors = getAllColors();
 
+    // Active issues not already in the list — offered as one-click adds.
+    const availableActiveIssues = Object.entries(activeIssues)
+        .filter(([key]) => !localList.some(e => e.key === key))
+        .sort((a, b) => a[0].localeCompare(b[0]));
+
     return (
         <>
             <div className="ticket-modal-backdrop" onClick={onClose} />
@@ -134,6 +149,27 @@ export const TicketListModal: React.FC<TicketListModalProps> = ({
                         ×
                     </button>
                 </div>
+
+                {availableActiveIssues.length > 0 && (
+                    <div className="ticket-modal-active">
+                        <div className="ticket-modal-active-label">Active issues</div>
+                        <div className="ticket-modal-active-chips">
+                            {availableActiveIssues.map(([key, summary]) => (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    className="ticket-modal-active-chip"
+                                    title={summary}
+                                    disabled={isFetchingName}
+                                    onClick={() => addTicket(key, summary)}
+                                >
+                                    <span className="ticket-modal-active-chip-key">{key}</span>
+                                    <span className="ticket-modal-active-chip-summary">{summary}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <div className="ticket-modal-add">
                     <input
