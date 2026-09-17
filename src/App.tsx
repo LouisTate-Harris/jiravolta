@@ -297,7 +297,7 @@ function App() {
         return prev.filter(d => d.id !== id);
       }
 
-      // If it's a Jira worklog, create a delete draft
+      // If it's a Jira worklog, create (or replace an existing) delete draft
       const originalWorklog = jiraWorklogs.find(w => w.id === id);
       if (!originalWorklog) return prev;
 
@@ -307,6 +307,11 @@ function App() {
         changeType: 'delete',
         lastModified: new Date().toISOString(),
       };
+
+      const existingIndex = prev.findIndex(d => d.id === id);
+      if (existingIndex !== -1) {
+        return prev.map(d => d.id === id ? deleteDraft : d);
+      }
 
       return [...prev, deleteDraft];
     });

@@ -58,6 +58,8 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
     const weekDaysRef = useRef(weekDays);
     const dayColumnWidthRef = useRef(dayColumnWidth);
     const [showMenu, setShowMenu] = useState(false);
+    const [isEditingComment, setIsEditingComment] = useState(false);
+    const [commentDraft, setCommentDraft] = useState(worklog.comment ?? '');
     const mouseMoveHandlerRef = useRef<((e: MouseEvent) => void) | null>(null);
     const mouseUpHandlerRef = useRef<(() => void) | null>(null);
     const originalStartRef = useRef<Date | null>(null);
@@ -282,6 +284,19 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
         };
     }, []);
 
+    const commitComment = () => {
+        const trimmed = commentDraft.trim();
+        if (trimmed !== (worklog.comment ?? '')) {
+            onUpdate({ comment: trimmed || undefined });
+        }
+        setIsEditingComment(false);
+    };
+
+    const cancelComment = () => {
+        setCommentDraft(worklog.comment ?? '');
+        setIsEditingComment(false);
+    };
+
     const top = timeToPixel(new Date(worklog.start));
     const height = worklog.durationMinutes / MINUTES_PER_PIXEL;
     const isDraft = worklog.source === 'draft';
@@ -324,6 +339,35 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
                             {height > 50 && (
                                 <div className="worklog-duration">{worklog.durationMinutes}m</div>
                             )}
+                            {height > 50 && (isEditingComment || worklog.comment) && (
+                                <div className="worklog-comment-row" onMouseDown={e => e.stopPropagation()}>
+                                    {isEditingComment ? (
+                                        <input
+                                            type="text"
+                                            className="worklog-comment-input"
+                                            autoFocus
+                                            value={commentDraft}
+                                            placeholder="Add a comment..."
+                                            onClick={e => e.stopPropagation()}
+                                            onChange={e => setCommentDraft(e.target.value)}
+                                            onBlur={commitComment}
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    commitComment();
+                                                } else if (e.key === 'Escape') {
+                                                    e.preventDefault();
+                                                    cancelComment();
+                                                }
+                                            }}
+                                        />
+                                    ) : worklog.comment ? (
+                                        <span className="worklog-comment-text" title={worklog.comment}>
+                                            {worklog.comment}
+                                        </span>
+                                    ) : null}
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
@@ -344,6 +388,15 @@ export const WorklogBlock: React.FC<WorklogBlockProps> = ({
                             left: '100%',
                         }}
                     >
+                        <button
+                            onClick={() => {
+                                setCommentDraft(worklog.comment ?? '');
+                                setIsEditingComment(true);
+                                setShowMenu(false);
+                            }}
+                        >
+                            Add/Edit comment
+                        </button>
                         <button onClick={() => { onDuplicate(); setShowMenu(false); }}>
                             Duplicate
                         </button>

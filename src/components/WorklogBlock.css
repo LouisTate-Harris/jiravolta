@@ -107,6 +107,35 @@
     background: #e0e0e0;
 }
 
+.worklog-comment-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    cursor: default;
+}
+
+.worklog-comment-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    padding: 1px 4px;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.9);
+    cursor: text;
+}
+
+.worklog-comment-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    opacity: 0.85;
+}
+
 /* Selected state */
 .worklog-block.selected {
     box-shadow: 0 0 0 3px #0066cc, 0 2px 8px rgba(0, 0, 0, 0.2);

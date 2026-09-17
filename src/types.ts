@@ -5,6 +5,7 @@ export interface Worklog {
     end: string;
     durationMinutes: number;
     source: 'jira' | 'draft';
+    comment?: string;
 }
 
 export interface DraftWorklog extends Worklog {
