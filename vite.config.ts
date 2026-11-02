@@ -4,6 +4,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Plugin, ViteDevServer } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { loadCalendarConfigs } from './server/calendar/config'
+import { IcsCalendarSource } from './server/calendar/icsCalendarSource'
+import { MergedCalendarSource } from './server/calendar/mergedCalendarSource'
+import type { CalendarEvent } from './server/calendar/calendarSource'
 
 const JIRA_ISSUE_SEARCH_FIELDS = [
   'summary',
@@ -744,11 +748,107 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
   }
 }
 
+function serializeCalendarEvent(event: CalendarEvent) {
+  return {
+    uid: event.uid,
+    calendarId: event.calendarId,
+    title: event.title ?? null,
+    start: event.start.toISOString(),
+    end: event.end.toISOString(),
+    allDay: event.allDay,
+    busyStatus: event.busyStatus,
+  }
+}
+
+// Given a date-only `weekEnd` (e.g. the Sunday of a week), returns the local
+// midnight that starts the following day — an exclusive upper bound that
+// includes all of weekEnd's 24 hours regardless of a DST change that day.
+function dayAfter(date: Date): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + 1)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+/**
+ * Local calendar-import middleware: merges one or more published Outlook ICS
+ * feeds (configured via ICS_CALENDAR_<NAME> env vars) into worklog-block
+ * candidates for a requested week. See server/calendar/ for the actual
+ * fetching/parsing/caching logic — this just exposes it over HTTP, the same
+ * way the Jira middleware above does.
+ */
+function calendarImportPlugin(env: Record<string, string>): Plugin {
+  const configs = loadCalendarConfigs(env)
+  const merged = new MergedCalendarSource(configs.map(config => new IcsCalendarSource(config)))
+
+  return {
+    name: 'calendar-import',
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        // ── GET /_local/calendar-sources ────────────────────────────────────
+        if (req.method === 'GET' && req.url?.startsWith('/_local/calendar-sources')) {
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ calendars: merged.calendars }))
+          return
+        }
+
+        // ── GET /_local/calendar-events?week=YYYY-MM-DD&weekEnd=YYYY-MM-DD ──
+        if (req.method === 'GET' && req.url?.startsWith('/_local/calendar-events')) {
+          if (merged.calendars.length === 0) {
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ events: [], failed: [] }))
+            return
+          }
+
+          const url = new URL(req.url, 'http://localhost')
+          const requestedWeek = url.searchParams.get('week')
+          const requestedWeekEnd = url.searchParams.get('weekEnd')
+
+          if (!requestedWeek || !requestedWeekEnd) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ error: 'Missing ?week and ?weekEnd params' }))
+            return
+          }
+
+          const parsedWeek = parseDateParam(requestedWeek)
+          const parsedWeekEnd = parseDateParam(requestedWeekEnd)
+          if (!parsedWeek || !parsedWeekEnd) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ error: 'Invalid ?week/?weekEnd param, expected YYYY-MM-DD' }))
+            return
+          }
+
+          try {
+            console.log('[calendar-import] Fetching merged events', { week: requestedWeek, weekEnd: requestedWeekEnd })
+            const result = await merged.getEvents(parsedWeek, dayAfter(parsedWeekEnd))
+            if (result.failed.length > 0) {
+              // Calendar labels only — never anything derived from the feed URL.
+              console.warn('[calendar-import] Some calendars failed to refresh', result.failed.map(f => f.label))
+            }
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({
+              events: result.events.map(serializeCalendarEvent),
+              failed: result.failed,
+            }))
+          } catch (err) {
+            console.error('[calendar-import] Fetch failed', err instanceof Error ? err.message : err)
+            res.statusCode = 502
+            res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Calendar fetch failed' }))
+          }
+          return
+        }
+
+        next()
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
   return {
-    plugins: [react(), jiraLocalCachePlugin(env)],
+    plugins: [react(), jiraLocalCachePlugin(env), calendarImportPlugin(env)],
   }
 })
