@@ -94,6 +94,18 @@
     background: #0d47a1;
 }
 
+.import-calendar-btn {
+    background: #fff;
+    border: 2px solid #1976d2;
+    color: #1976d2;
+    font-weight: 600;
+}
+
+.import-calendar-btn:hover {
+    background: #e3eefb;
+    border-color: #1565c0;
+}
+
 .clear-cache-btn {
     padding: 0.4rem !important;
     font-size: 18px !important;

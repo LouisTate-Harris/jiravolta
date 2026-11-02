@@ -1,0 +1,146 @@
+.import-grid-wrap {
+    overflow-y: auto;
+    overflow-x: auto;
+    max-height: 56vh;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fff;
+    padding: 8px 8px 0;
+}
+
+.import-day-headers {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.import-header-spacer {
+    flex-shrink: 0;
+    width: 44px;
+}
+
+.import-day-header {
+    flex: 1;
+    min-width: 76px;
+    text-align: center;
+    padding: 4px 2px;
+    border-radius: 4px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.import-day-header small {
+    display: block;
+    font-weight: 400;
+    color: #666;
+    font-size: 11px;
+}
+
+.import-allday-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.import-allday-label {
+    flex-shrink: 0;
+    width: 44px;
+    font-size: 10px;
+    color: #666;
+    text-align: right;
+    padding-right: 4px;
+    align-self: center;
+}
+
+.import-allday-cell {
+    flex: 1;
+    min-width: 76px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 3px 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    align-content: flex-start;
+    min-height: 24px;
+}
+
+.import-allday-chip {
+    font: inherit;
+    font-size: 10px;
+    border: 1px dashed #9fb0c3;
+    background: repeating-linear-gradient(45deg, #f1f3f5, #f1f3f5 3px, #e4e8ec 3px, #e4e8ec 6px);
+    color: #5a6878;
+    border-radius: 3px;
+    padding: 1px 6px;
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.import-allday-chip--excluded {
+    opacity: 0.6;
+}
+
+.import-allday-chip--selected {
+    outline: 2px solid #1976d2;
+}
+
+.import-body {
+    display: flex;
+    gap: 4px;
+}
+
+.import-hours-col {
+    flex-shrink: 0;
+    width: 44px;
+}
+
+.import-hour-label {
+    font-size: 10px;
+    color: #999;
+    text-align: right;
+    padding-right: 6px;
+    box-sizing: border-box;
+    transform: translateY(-6px);
+}
+
+.import-days-row {
+    display: flex;
+    gap: 1px;
+    flex: 1;
+    background: #e0e0e0;
+}
+
+.import-day-column {
+    flex: 1;
+    min-width: 76px;
+    position: relative;
+    background: #fff;
+    background-image: linear-gradient(to bottom, #eee 1px, transparent 1px);
+    background-size: 100% 60px;
+    cursor: crosshair;
+    box-sizing: border-box;
+}
+
+.import-hour-cell {
+    box-sizing: border-box;
+    border-bottom: 1px solid transparent; /* keeps row heights consistent; visual lines come from the column's background-image */
+}
+
+.import-block--preview {
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border: 2px dashed #1976d2;
+    color: #1976d2;
+    font-size: 11px;
+    font-weight: 600;
+}

@@ -14,6 +14,7 @@ import type { TicketEntry } from './utils/ticketListStorage';
 import { mergeWorklogsAndDrafts } from './utils/validationUtils';
 import { fetchWorklogsForWeek, isJiraConfigured, fetchJiraConfig, createJiraWorklog, updateJiraWorklog, deleteJiraWorklog, invalidateWeekCache, fetchActiveIssues, fetchIssueSummary, clearCache } from './services/jiraService';
 import type { CacheScope } from './services/jiraService';
+import { fetchCalendarSources, isCalendarImportConfigured } from './services/calendarService';
 import { getIssueLabel } from './utils/issueDisplayUtils';
 import { WeekNavigation } from './components/WeekNavigation';
 import { StatusMatrix } from './components/StatusMatrix';
@@ -21,6 +22,7 @@ import { InteractiveTimeline } from './components/InteractiveTimeline';
 import { ReviewPanel } from './components/ReviewPanel';
 import { LoadingOverlay } from './components/LoadingOverlay';
 import { ClearCacheModal } from './components/ClearCacheModal';
+import { CalendarImportWizard } from './components/CalendarImport/CalendarImportWizard';
 import './App.css';
 
 function App() {
@@ -43,6 +45,8 @@ function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [ticketList, setTicketList] = useState<TicketEntry[]>([]);
   const [clearCacheModalOpen, setClearCacheModalOpen] = useState(false);
+  const [calendarImportAvailable, setCalendarImportAvailable] = useState(false);
+  const [calendarImportOpen, setCalendarImportOpen] = useState(false);
 
   const weekStart = useMemo(() => getWeekStart(currentWeek), [currentWeek]);
   const weekDays = useMemo(() => getWeekDays(currentWeek), [currentWeek]);
@@ -96,6 +100,14 @@ function App() {
     fetchJiraConfig().then(config => {
       setJiraBaseUrl(config.baseUrl);
       setJiraConfigLoaded(true);
+    });
+  }, []);
+
+  // Fetch calendar-import config once on mount; the button only appears
+  // once at least one ICS_CALENDAR_* calendar is configured.
+  useEffect(() => {
+    fetchCalendarSources().then(() => {
+      setCalendarImportAvailable(isCalendarImportConfigured());
     });
   }, []);
 
@@ -251,6 +263,10 @@ function App() {
 
   const handleCreateWorklog = (draft: DraftWorklog) => {
     setDrafts(prev => [...prev, draft]);
+  };
+
+  const handleImportWorklogs = (imported: DraftWorklog[]) => {
+    setDrafts(prev => [...prev, ...imported]);
   };
 
   const handleUpdateWorklog = (id: string, updates: Partial<Worklog>) => {
@@ -489,6 +505,7 @@ function App() {
         issueDisplayMode={issueDisplayMode}
         onIssueDisplayModeChange={setIssueDisplayMode}
         onOpenClearCache={isJiraConfigured() ? () => setClearCacheModalOpen(true) : undefined}
+        onOpenCalendarImport={calendarImportAvailable ? () => setCalendarImportOpen(true) : undefined}
       />
 
       {usingMockData && (
@@ -571,6 +588,20 @@ function App() {
         <ClearCacheModal
           onClose={() => setClearCacheModalOpen(false)}
           onClear={handleClearCache}
+        />
+      )}
+
+      {calendarImportOpen && (
+        <CalendarImportWizard
+          weekStart={weekStart}
+          weekDays={weekDays}
+          jiraWorklogs={jiraWorklogs}
+          ticketList={ticketList}
+          formatIssueLabel={formatIssueLabel}
+          getIssueFullLabel={getIssueFullLabel}
+          isIssueAliased={isIssueAliased}
+          onClose={() => setCalendarImportOpen(false)}
+          onImport={handleImportWorklogs}
         />
       )}
     </div>

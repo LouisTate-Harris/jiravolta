@@ -11,6 +11,7 @@ interface WeekNavigationProps {
     issueDisplayMode: IssueDisplayMode;
     onIssueDisplayModeChange: (mode: IssueDisplayMode) => void;
     onOpenClearCache?: () => void;
+    onOpenCalendarImport?: () => void;
 }
 
 export const WeekNavigation: React.FC<WeekNavigationProps> = ({
@@ -21,6 +22,7 @@ export const WeekNavigation: React.FC<WeekNavigationProps> = ({
     issueDisplayMode,
     onIssueDisplayModeChange,
     onOpenClearCache,
+    onOpenCalendarImport,
 }) => {
     const weekStart = getWeekStart(currentWeek);
     const weekEnd = getWeekEnd(currentWeek);
@@ -34,6 +36,11 @@ export const WeekNavigation: React.FC<WeekNavigationProps> = ({
                 </div>
             </div>
             <div className="week-controls">
+                {onOpenCalendarImport && (
+                    <button onClick={onOpenCalendarImport} className="nav-btn import-calendar-btn" title="Import calendar events as worklog blocks">
+                        Import calendar
+                    </button>
+                )}
                 <div className="issue-display-toggle" role="group" aria-label="Issue label mode">
                     <button
                         type="button"
