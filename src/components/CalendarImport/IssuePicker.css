@@ -1,0 +1,143 @@
+.issue-picker {
+    position: relative;
+    min-width: 240px;
+}
+
+.issue-picker--disabled {
+    opacity: 0.6;
+}
+
+.issue-picker-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid #c9d2dc;
+    border-radius: 4px;
+    padding: 5px 8px;
+    background: #fff;
+    cursor: pointer;
+    text-align: left;
+}
+
+.issue-picker-trigger:disabled {
+    cursor: not-allowed;
+}
+
+.issue-picker-trigger-label {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    min-width: 0;
+    flex: 1;
+}
+
+.issue-picker-key {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    color: #1976d2;
+    flex-shrink: 0;
+}
+
+.issue-picker-summary {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #213547;
+}
+
+.issue-picker-placeholder {
+    color: #999;
+    flex: 1;
+}
+
+.issue-picker-caret {
+    color: #999;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.issue-picker-dropdown {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    width: max(100%, 320px);
+    background: #fff;
+    border: 1px solid #c9d2dc;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    z-index: 30;
+    padding: 6px 0;
+}
+
+.issue-picker-search {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 8px 6px;
+    width: calc(100% - 16px);
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid #1976d2;
+    border-radius: 4px;
+    padding: 5px 8px;
+}
+
+.issue-picker-paste-hit {
+    display: block;
+    width: calc(100% - 16px);
+    margin: 0 8px 6px;
+    font: inherit;
+    font-size: 12px;
+    color: #1976d2;
+    background: #e3eefb;
+    border: 1px solid #1976d2;
+    border-radius: 4px;
+    padding: 5px 8px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.issue-picker-options {
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.issue-picker-empty {
+    padding: 10px;
+    color: #999;
+    font-size: 12px;
+    text-align: center;
+}
+
+.issue-picker-group-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #999;
+    padding: 5px 10px 2px;
+}
+
+.issue-picker-option {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    width: 100%;
+    font: inherit;
+    font-size: 13px;
+    border: none;
+    background: none;
+    padding: 5px 10px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.issue-picker-option:hover,
+.issue-picker-option--selected {
+    background: #e3eefb;
+}
+
+.issue-picker-option .issue-picker-summary {
+    flex: 1;
+}

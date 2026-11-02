@@ -41,6 +41,7 @@ const LOCAL_JIRA_WORKLOG_UPDATE_ENDPOINT = '/_local/jira-worklog-update';
 const LOCAL_JIRA_WORKLOG_DELETE_ENDPOINT = '/_local/jira-worklog-delete';
 const LOCAL_JIRA_CACHE_INVALIDATE_ENDPOINT = '/_local/jira-cache-invalidate';
 const LOCAL_JIRA_ACTIVE_ISSUES_ENDPOINT = '/_local/jira-active-issues';
+const LOCAL_JIRA_ISSUE_POOL_ENDPOINT = '/_local/jira-issue-pool';
 const LOCAL_JIRA_CACHE_CLEAR_ALL_ENDPOINT = '/_local/jira-cache-clear-all';
 const LOCAL_JIRA_ISSUE_ENDPOINT = '/_local/jira-issue';
 
@@ -237,6 +238,42 @@ export async function fetchActiveIssues(): Promise<ActiveIssue[]> {
     }
 }
 
+export type IssuePoolSource = 'sprint' | 'filter' | 'assigned';
+
+export interface PoolIssue {
+    key: string;
+    summary: string;
+    sources: IssuePoolSource[];
+}
+
+/**
+ * Fetch the merged issue pool (active sprint + saved filter + assigned to
+ * me) used by the calendar-import ticket picker. The result is cached
+ * server-side in .cache/issue-pool.json. Returns an empty pool rather than
+ * throwing — JIRA_BOARD_ID/JIRA_EXTRA_FILTER_ID are optional, so an empty
+ * pool (just nothing configured beyond "assigned to me") is a normal result.
+ */
+export async function fetchIssuePool(): Promise<PoolIssue[]> {
+    if (!isJiraConfigured()) {
+        return [];
+    }
+    console.log('[JIRA API] Fetching issue pool');
+    try {
+        const response = await fetch(LOCAL_JIRA_ISSUE_POOL_ENDPOINT);
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            console.warn('[JIRA API] Issue pool fetch failed:', response.status, errorText);
+            return [];
+        }
+        const data = await response.json() as { issues: PoolIssue[] };
+        console.log('[JIRA API] Issue pool loaded:', data.issues.length);
+        return data.issues;
+    } catch (error) {
+        console.error('[JIRA API] Issue pool fetch error', error);
+        return [];
+    }
+}
+
 /**
  * Fetch a single issue's summary by key. Returns null if Jira isn't
  * configured, the request fails, or the issue has no summary — never throws.
@@ -260,7 +297,7 @@ export async function fetchIssueSummary(key: string): Promise<string | null> {
     }
 }
 
-export type CacheScope = 'worklogs' | 'active-issues' | 'ticket-list';
+export type CacheScope = 'worklogs' | 'active-issues' | 'ticket-list' | 'issue-pool';
 
 /**
  * Delete the given server-side cache file(s). Omit `scopes` to clear everything

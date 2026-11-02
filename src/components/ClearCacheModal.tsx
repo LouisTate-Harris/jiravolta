@@ -23,6 +23,11 @@ const CACHE_OPTIONS: Array<{ scope: CacheScope; label: string; description: stri
         label: 'My ticket list',
         description: 'Your manually curated list of issues, aliases, and colours.',
     },
+    {
+        scope: 'issue-pool',
+        label: 'Issue pool',
+        description: 'Sprint, saved filter, and assigned issues used by the calendar-import ticket picker.',
+    },
 ];
 
 export const ClearCacheModal: React.FC<ClearCacheModalProps> = ({ onClose, onClear }) => {

@@ -8,6 +8,7 @@ import { loadCalendarConfigs } from './server/calendar/config'
 import { IcsCalendarSource } from './server/calendar/icsCalendarSource'
 import { MergedCalendarSource } from './server/calendar/mergedCalendarSource'
 import type { CalendarEvent } from './server/calendar/calendarSource'
+import { fetchIssuePool } from './server/jira/issuePool'
 
 const JIRA_ISSUE_SEARCH_FIELDS = [
   'summary',
@@ -248,19 +249,20 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
           return
         }
 
-        // ── DELETE /_local/jira-cache-clear-all?scope=worklogs|active-issues|ticket-list ──
+        // ── DELETE /_local/jira-cache-clear-all?scope=worklogs|active-issues|ticket-list|issue-pool ──
         // Repeat the ?scope= param to clear multiple caches; omit it to clear everything.
         if (req.method === 'DELETE' && req.url?.startsWith('/_local/jira-cache-clear-all')) {
           const clearUrl = new URL(req.url, 'http://localhost')
           const requestedScopes = clearUrl.searchParams.getAll('scope')
           const scopes = requestedScopes.length > 0
             ? requestedScopes
-            : ['worklogs', 'active-issues', 'ticket-list']
+            : ['worklogs', 'active-issues', 'ticket-list', 'issue-pool']
           const dirPath = path.resolve('.cache')
+          const scopedCacheFiles = ['active-issues.json', 'ticket-list.json', 'issue-pool.json']
 
           if (scopes.includes('worklogs') && fs.existsSync(dirPath)) {
             for (const file of fs.readdirSync(dirPath)) {
-              if (file.endsWith('.json') && file !== 'active-issues.json' && file !== 'ticket-list.json') {
+              if (file.endsWith('.json') && !scopedCacheFiles.includes(file)) {
                 fs.rmSync(path.join(dirPath, file))
               }
             }
@@ -278,6 +280,11 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
           if (scopes.includes('ticket-list')) {
             const ticketListFile = path.join(dirPath, 'ticket-list.json')
             if (fs.existsSync(ticketListFile)) fs.rmSync(ticketListFile)
+          }
+
+          if (scopes.includes('issue-pool')) {
+            const issuePoolFile = path.join(dirPath, 'issue-pool.json')
+            if (fs.existsSync(issuePoolFile)) fs.rmSync(issuePoolFile)
           }
 
           console.log(`[jira-local-cache] Cleared cache (scope=${scopes.join(',')})`)
@@ -315,7 +322,8 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
         }
 
         // ── GET /_local/jira-issue?key=CAN-1234 ──────────────────────────────
-        if (req.method === 'GET' && req.url?.startsWith('/_local/jira-issue')) {
+        // Matches on '?' so it doesn't also catch /_local/jira-issue-pool below.
+        if (req.method === 'GET' && req.url?.startsWith('/_local/jira-issue?')) {
           const baseUrl = env.JIRA_BASE_URL
           const email = env.JIRA_EMAIL
           const token = env.JIRA_API_TOKEN
@@ -434,6 +442,59 @@ function jiraLocalCachePlugin(env: Record<string, string>): Plugin {
           } catch (err) {
             res.statusCode = 500
             res.end(JSON.stringify({ error: String(err) }))
+          }
+          return
+        }
+
+        // ── GET /_local/jira-issue-pool ──────────────────────────────────────
+        // Merges the active sprint of JIRA_BOARD_ID, a saved filter
+        // (JIRA_EXTRA_FILTER_ID), and issues assigned to the current user —
+        // for the calendar-import ticket picker.
+        if (req.method === 'GET' && req.url?.startsWith('/_local/jira-issue-pool')) {
+          const poolCacheDir = path.resolve('.cache')
+          const poolCacheFile = path.join(poolCacheDir, 'issue-pool.json')
+
+          if (fs.existsSync(poolCacheFile)) {
+            console.log('[jira-local-cache] HIT  .cache/issue-pool.json')
+            res.setHeader('Content-Type', 'application/json')
+            res.setHeader('X-Cache', 'HIT')
+            res.end(fs.readFileSync(poolCacheFile, 'utf-8'))
+            return
+          }
+
+          const poolBaseUrl = env.JIRA_BASE_URL
+          const poolEmail = env.JIRA_EMAIL
+          const poolToken = env.JIRA_API_TOKEN
+
+          if (!poolBaseUrl || !poolEmail || !poolToken) {
+            res.statusCode = 503
+            res.end(JSON.stringify({ error: 'Jira env vars not configured' }))
+            return
+          }
+
+          try {
+            console.log('[jira-local-cache] MISS .cache/issue-pool.json — fetching from Jira', {
+              boardConfigured: !!env.JIRA_BOARD_ID,
+              filterConfigured: !!env.JIRA_EXTRA_FILTER_ID,
+            })
+            const poolAuthHeader = `Basic ${Buffer.from(`${poolEmail}:${poolToken}`).toString('base64')}`
+            const issues = await fetchIssuePool({
+              baseUrl: poolBaseUrl,
+              authHeader: poolAuthHeader,
+              boardId: env.JIRA_BOARD_ID || undefined,
+              filterId: env.JIRA_EXTRA_FILTER_ID || undefined,
+            })
+
+            const result = { issues }
+            fs.mkdirSync(poolCacheDir, { recursive: true })
+            fs.writeFileSync(poolCacheFile, JSON.stringify(result, null, 2))
+            res.setHeader('Content-Type', 'application/json')
+            res.setHeader('X-Cache', 'MISS')
+            res.end(JSON.stringify(result))
+          } catch (err) {
+            console.error('[jira-local-cache] Issue pool fetch failed', err instanceof Error ? err.message : err)
+            res.statusCode = 502
+            res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Issue pool fetch failed' }))
           }
           return
         }

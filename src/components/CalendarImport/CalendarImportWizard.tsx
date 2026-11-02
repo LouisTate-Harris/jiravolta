@@ -8,9 +8,12 @@ import {
     type CalendarInfo,
     type CalendarFailure,
 } from '../../services/calendarService';
+import { fetchIssuePool } from '../../services/jiraService';
 import { toImportBlock, findClashingBlockIds } from './importBlock';
 import type { ImportBlock } from './importBlock';
 import { ImportBlockGrid } from './ImportBlockGrid';
+import { IssuePicker } from './IssuePicker';
+import { buildIssuePickerOptions } from './issuePickerOptions';
 import './CalendarImportWizard.css';
 
 interface CalendarImportWizardProps {
@@ -18,9 +21,6 @@ interface CalendarImportWizardProps {
     weekDays: Date[];
     jiraWorklogs: Worklog[];
     ticketList: TicketEntry[];
-    formatIssueLabel: (issueKey: string, maxLength?: number) => string;
-    getIssueFullLabel: (issueKey: string) => string;
-    isIssueAliased: (issueKey: string) => boolean;
     onClose: () => void;
     onImport: (drafts: DraftWorklog[]) => void;
 }
@@ -32,9 +32,6 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
     weekDays,
     jiraWorklogs,
     ticketList,
-    formatIssueLabel,
-    getIssueFullLabel,
-    isIssueAliased,
     onClose,
     onImport,
 }) => {
@@ -51,6 +48,7 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
     });
     const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
     const [defaultIssueKey, setDefaultIssueKey] = useState<string>(ticketList[0]?.key ?? '');
+    const [issuePoolOptions, setIssuePoolOptions] = useState<ReturnType<typeof buildIssuePickerOptions>>([]);
 
     useEffect(() => {
         let cancelled = false;
@@ -60,13 +58,15 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
             setError(null);
             try {
                 const weekEnd = weekDays[weekDays.length - 1];
-                const [sources, { events, failed }] = await Promise.all([
+                const [sources, { events, failed }, issuePool] = await Promise.all([
                     fetchCalendarSources(),
                     fetchCalendarEvents(weekStart, weekEnd),
+                    fetchIssuePool(),
                 ]);
                 if (cancelled) return;
 
                 setCalendars(sources);
+                setIssuePoolOptions(buildIssuePickerOptions(issuePool, ticketList));
                 setEnabledCalendarIds(new Set(sources.map(s => s.id)));
                 setBlocks(events.map(event => toImportBlock(event, jiraWorklogs)));
                 setFailedCalendars(failed);
@@ -323,17 +323,15 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
                                 {clashCount > 0 && <> · <span className="import-wizard-summary-warn">{clashCount} overlap{clashCount === 1 ? '' : 's'}</span></>}
                             </div>
                             <div className="import-wizard-foot-right">
-                                <label className="import-default-issue">
-                                    Assign to:
-                                    <select value={defaultIssueKey} onChange={e => setDefaultIssueKey(e.target.value)} disabled={ticketList.length === 0}>
-                                        {ticketList.length === 0 && <option value="">— add tickets to list —</option>}
-                                        {ticketList.map(entry => (
-                                            <option key={entry.key} value={entry.key} title={getIssueFullLabel(entry.key)} style={isIssueAliased(entry.key) ? { fontStyle: 'italic' } : undefined}>
-                                                {formatIssueLabel(entry.key, 40)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
+                                <div className="import-default-issue">
+                                    <span>Assign to:</span>
+                                    <IssuePicker
+                                        value={defaultIssueKey}
+                                        options={issuePoolOptions}
+                                        onChange={setDefaultIssueKey}
+                                        placeholder="Choose a ticket…"
+                                    />
+                                </div>
                                 <button type="button" onClick={onClose}>Cancel</button>
                                 <button
                                     type="button"

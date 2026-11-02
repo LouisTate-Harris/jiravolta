@@ -597,9 +597,6 @@ function App() {
           weekDays={weekDays}
           jiraWorklogs={jiraWorklogs}
           ticketList={ticketList}
-          formatIssueLabel={formatIssueLabel}
-          getIssueFullLabel={getIssueFullLabel}
-          isIssueAliased={isIssueAliased}
           onClose={() => setCalendarImportOpen(false)}
           onImport={handleImportWorklogs}
         />
