@@ -18,3 +18,15 @@ docs/
 # Runtime
 *.local
 .cache/
+
+# Secrets (1Password op:// references only — never the resolved values)
+.env.op.local
+
+# Learned calendar->ticket mappings and local matching model cache.
+# These normally live outside the repo (~/.config/jiravolta/), but ignore
+# them here too in case that location is ever overridden into the repo.
+.jiravolta/
+*.learned-mappings.json
+
+# Vitest/coverage output
+coverage/
