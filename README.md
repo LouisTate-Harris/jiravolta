@@ -100,6 +100,39 @@ The Jira data cache is stored in a Docker named volume (`jiravolta-cache`) and p
 - Click "Today" to jump to the current week
 - Week range is displayed at the top
 
+### Importing from calendars
+
+The **Import calendar** button (it appears once at least one calendar is configured) turns the meetings in your published Outlook calendars into draft worklogs for the week you're viewing. Nothing reaches Jira until you approve the drafts in the Review panel, as usual.
+
+1. **Review blocks**: all calendars are merged into one week grid. Drag to move or resize, drag on empty space to add a block, exclude or delete blocks, and resolve overlaps. All-day, Free, Tentative, Out-of-office and anything overlapping a worklog already in Jira start excluded.
+2. **Map to tickets**: one table for every block, with repeated titles grouped. Each row gets a proposed ticket and a badge showing where it came from, and you can change any of them with the searchable picker (or paste a Jira link). Every row needs a ticket or must be skipped before you can create the drafts.
+
+#### Configuring calendars
+
+Publish each Outlook calendar and put its ICS link in an `ICS_CALENDAR_<NAME>` variable; the name becomes its label (`ICS_CALENDAR_MEETINGS` shows as "Meetings"). The links expose your event titles to anyone who holds them, so keep them out of files that get committed. They are redacted from logs and errors, and the raw feed is never written to disk. Outlook refreshes published feeds with some lag, so a brand new event can take a while to appear; to rotate a link, republish the calendar and update the variable.
+
+The ticket picker draws on your ticket list, the active sprint of `JIRA_BOARD_ID`, the saved filter `JIRA_EXTRA_FILTER_ID`, and issues assigned to you.
+
+One way to keep the links out of your env files is 1Password: store them as `op://` references in a git-ignored `.env.op.local` and start the app with:
+
+```bash
+just run-op   # op run --env-file=.env.op.local -- pnpm dev
+```
+
+Calendar import runs natively only; the Docker setup doesn't support it.
+
+#### How tickets are matched
+
+Matching runs locally and never sends anything off your machine, unless you opt in to the Claude step below.
+
+- **Remembered**: when you create drafts, each title and ticket pair you confirmed is saved. Titles are normalised first, so "Team stand-up (3/5)" and "RE: Team stand-up" are the same meeting. A remembered ticket that has left the pool is ignored.
+- **Similar**: a small sentence-embedding model (`Xenova/all-MiniLM-L6-v2`, about 25 MB) compares the title with ticket summaries and with titles you've mapped before. It downloads once on first use, then runs offline. If it can't be loaded, a simple word-overlap comparison is used instead.
+- **Claude (optional)**: set `ANTHROPIC_API_KEY` and an **Ask Claude** button appears for rows the local steps couldn't place confidently. It is never automatic: you see the event titles and ticket list that will be sent (never times, attendees or descriptions) and click Send. The model defaults to `claude-haiku-5-5`; override it with `CLAUDE_MATCH_MODEL`. Without a key the button doesn't appear.
+
+Tick or untick **Remember** on a row to choose whether its pair is saved. Use **Learned mappings** in step 2 to review and delete what has been learned.
+
+Learned mappings and the model cache live in `~/.config/jiravolta/` (readable only by you), outside the repository. Set `JIRAVOLTA_CONFIG_DIR` to move them.
+
 ## Architecture
 
 ### Tech Stack
