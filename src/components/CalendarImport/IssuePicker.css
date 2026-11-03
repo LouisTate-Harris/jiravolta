@@ -60,15 +60,12 @@
 }
 
 .issue-picker-dropdown {
-    position: absolute;
-    bottom: calc(100% + 4px);
-    left: 0;
-    width: max(100%, 320px);
+    position: fixed;
     background: #fff;
     border: 1px solid #c9d2dc;
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    z-index: 30;
+    z-index: 1200;
     padding: 6px 0;
 }
 

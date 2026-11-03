@@ -265,8 +265,12 @@ function App() {
     setDrafts(prev => [...prev, draft]);
   };
 
-  const handleImportWorklogs = (imported: DraftWorklog[]) => {
+  const handleImportWorklogs = (imported: DraftWorklog[], newTickets: TicketEntry[]) => {
     setDrafts(prev => [...prev, ...imported]);
+    // Tickets the import used get names and colours like any other ticket in the list.
+    if (newTickets.length > 0) {
+      handleTicketListChange([...ticketList, ...newTickets]);
+    }
   };
 
   const handleUpdateWorklog = (id: string, updates: Partial<Worklog>) => {

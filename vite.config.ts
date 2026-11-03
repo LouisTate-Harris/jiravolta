@@ -9,6 +9,11 @@ import { IcsCalendarSource } from './server/calendar/icsCalendarSource'
 import { MergedCalendarSource } from './server/calendar/mergedCalendarSource'
 import type { CalendarEvent } from './server/calendar/calendarSource'
 import { fetchIssuePool } from './server/jira/issuePool'
+import { LearnedMappingStore, resolveConfigDir } from './server/matching/learnedMappings'
+import { createLocalScorer } from './server/matching/similarity'
+import { matchTitles } from './server/matching/matcher'
+import { askClaude, createClaudeClient, DEFAULT_CLAUDE_MATCH_MODEL } from './server/matching/claude'
+import type { TicketCandidate } from './server/matching/types'
 
 const JIRA_ISSUE_SEARCH_FIELDS = [
   'summary',
@@ -905,11 +910,148 @@ function calendarImportPlugin(env: Record<string, string>): Plugin {
   }
 }
 
+const readBody = (r: IncomingMessage): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    r.on('data', (chunk: Buffer) => chunks.push(chunk))
+    r.on('end', () => resolve(Buffer.concat(chunks).toString()))
+    r.on('error', reject)
+  })
+
+function parseMatchBody(body: string): { titles: string[]; candidates: TicketCandidate[] } | null {
+  try {
+    const parsed = JSON.parse(body) as { titles?: unknown; candidates?: unknown }
+    if (!Array.isArray(parsed.titles) || !parsed.titles.every(t => typeof t === 'string')) return null
+    if (!Array.isArray(parsed.candidates)) return null
+    const candidates = parsed.candidates.filter(
+      (c): c is TicketCandidate => typeof c?.key === 'string' && typeof c?.summary === 'string',
+    )
+    return { titles: parsed.titles as string[], candidates }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Ticket matching for calendar import: remembered mappings and a local
+ * similarity model always run; the Claude endpoint only exists when
+ * ANTHROPIC_API_KEY is set. Learned mappings live in the user's home folder
+ * (see server/matching/learnedMappings.ts), never in the repo.
+ */
+function calendarMatchPlugin(env: Record<string, string>): Plugin {
+  const configDir = resolveConfigDir(env)
+  const store = new LearnedMappingStore(configDir)
+  const localScorer = createLocalScorer(configDir, env.JIRAVOLTA_SIMILARITY_MODEL || undefined)
+  const apiKey = env.ANTHROPIC_API_KEY || ''
+  const claudeModel = env.CLAUDE_MATCH_MODEL || DEFAULT_CLAUDE_MATCH_MODEL
+  const claude = apiKey ? createClaudeClient(apiKey) : null
+
+  const sendJson = (res: ServerResponse, status: number, body: unknown) => {
+    res.statusCode = status
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify(body))
+  }
+
+  return {
+    name: 'calendar-match',
+    configureServer(server: ViteDevServer) {
+      // Warm the model in the background so the first match isn't slow.
+      void localScorer.get()
+
+      server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        const url = req.url ?? ''
+
+        // ── GET /_local/calendar-match-config ───────────────────────────────
+        if (req.method === 'GET' && url.startsWith('/_local/calendar-match-config')) {
+          sendJson(res, 200, { claudeAvailable: !!claude, claudeModel: claude ? claudeModel : null, similarity: localScorer.status() })
+          return
+        }
+
+        // ── POST /_local/calendar-match ─────────────────────────────────────
+        if (req.method === 'POST' && url.startsWith('/_local/calendar-match-claude')) {
+          if (!claude) {
+            sendJson(res, 404, { error: 'ANTHROPIC_API_KEY is not configured' })
+            return
+          }
+          const input = parseMatchBody(await readBody(req))
+          if (!input) {
+            sendJson(res, 400, { error: 'Expected { titles: string[], candidates: {key, summary}[] }' })
+            return
+          }
+          try {
+            console.log('[calendar-match] Asking Claude', { titles: input.titles.length, candidates: input.candidates.length })
+            sendJson(res, 200, { proposals: await askClaude(claude, claudeModel, input.titles, input.candidates) })
+          } catch (err) {
+            // The SDK's message never includes the API key, but only forward the message regardless.
+            console.error('[calendar-match] Claude request failed', err instanceof Error ? err.message : err)
+            sendJson(res, 502, { error: err instanceof Error ? err.message : 'Claude request failed' })
+          }
+          return
+        }
+
+        if (req.method === 'POST' && url.startsWith('/_local/calendar-match')) {
+          const input = parseMatchBody(await readBody(req))
+          if (!input) {
+            sendJson(res, 400, { error: 'Expected { titles: string[], candidates: {key, summary}[] }' })
+            return
+          }
+          try {
+            const proposals = await matchTitles({
+              titles: input.titles,
+              candidates: input.candidates,
+              learned: store.list(),
+              scorer: await localScorer.get(),
+            })
+            sendJson(res, 200, { proposals })
+          } catch (err) {
+            console.error('[calendar-match] Matching failed', err instanceof Error ? err.message : err)
+            sendJson(res, 500, { error: err instanceof Error ? err.message : 'Matching failed' })
+          }
+          return
+        }
+
+        // ── GET|PUT|DELETE /_local/learned-mappings ─────────────────────────
+        if (url.startsWith('/_local/learned-mappings')) {
+          if (req.method === 'GET') {
+            sendJson(res, 200, { mappings: store.list() })
+            return
+          }
+          if (req.method === 'PUT') {
+            try {
+              const parsed = JSON.parse(await readBody(req)) as { pairs?: Array<{ title?: unknown; issueKey?: unknown }> }
+              const pairs = (parsed.pairs ?? []).filter(
+                (p): p is { title: string; issueKey: string } => typeof p.title === 'string' && typeof p.issueKey === 'string',
+              )
+              sendJson(res, 200, { mappings: store.record(pairs) })
+            } catch {
+              sendJson(res, 400, { error: 'Expected { pairs: {title, issueKey}[] }' })
+            }
+            return
+          }
+          if (req.method === 'DELETE') {
+            const id = new URL(url, 'http://localhost').searchParams.get('id')
+            if (!id) {
+              sendJson(res, 400, { error: 'Missing ?id param' })
+              return
+            }
+            store.remove(id)
+            res.statusCode = 204
+            res.end()
+            return
+          }
+        }
+
+        next()
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
   return {
-    plugins: [react(), jiraLocalCachePlugin(env), calendarImportPlugin(env)],
+    plugins: [react(), jiraLocalCachePlugin(env), calendarImportPlugin(env), calendarMatchPlugin(env)],
   }
 })

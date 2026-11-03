@@ -9,11 +9,33 @@ import {
     type CalendarFailure,
 } from '../../services/calendarService';
 import { fetchIssuePool } from '../../services/jiraService';
+import {
+    fetchMatchConfig,
+    matchTitles,
+    askClaudeToMatch,
+    saveLearnedMappings,
+    type MatchConfig,
+} from '../../services/matchingService';
 import { toImportBlock, findClashingBlockIds } from './importBlock';
 import type { ImportBlock } from './importBlock';
 import { ImportBlockGrid } from './ImportBlockGrid';
-import { IssuePicker } from './IssuePicker';
 import { buildIssuePickerOptions } from './issuePickerOptions';
+import { MappingStep } from './MappingStep';
+import { LearnedMappingsModal } from './LearnedMappingsModal';
+import {
+    applyProposals,
+    buildRows,
+    isComplete,
+    needsTicket,
+    pairsToRemember,
+    rowAssignment,
+    setIssue,
+    setRemember,
+    setSkip,
+    titlesForClaude,
+    toDrafts,
+} from './mapping';
+import type { Assignments, MappingRow } from './mapping';
 import './CalendarImportWizard.css';
 
 interface CalendarImportWizardProps {
@@ -22,7 +44,8 @@ interface CalendarImportWizardProps {
     jiraWorklogs: Worklog[];
     ticketList: TicketEntry[];
     onClose: () => void;
-    onImport: (drafts: DraftWorklog[]) => void;
+    /** `tickets` are the tickets the drafts use that aren't in the ticket list yet. */
+    onImport: (drafts: DraftWorklog[], tickets: TicketEntry[]) => void;
 }
 
 type CategoryKey = 'allDay' | 'freeTentative' | 'oof';
@@ -47,7 +70,14 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
         oof: false,
     });
     const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
-    const [defaultIssueKey, setDefaultIssueKey] = useState<string>(ticketList[0]?.key ?? '');
+    const [step, setStep] = useState<1 | 2>(1);
+    const [assignments, setAssignments] = useState<Assignments>({});
+    const [matching, setMatching] = useState(false);
+    const [matchError, setMatchError] = useState<string | null>(null);
+    const [matchConfig, setMatchConfig] = useState<MatchConfig>({ claudeAvailable: false, claudeModel: null });
+    const [grouped, setGrouped] = useState(true);
+    const [learnedOpen, setLearnedOpen] = useState(false);
+    const [creating, setCreating] = useState(false);
     const [issuePoolOptions, setIssuePoolOptions] = useState<ReturnType<typeof buildIssuePickerOptions>>([]);
 
     useEffect(() => {
@@ -58,12 +88,15 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
             setError(null);
             try {
                 const weekEnd = weekDays[weekDays.length - 1];
-                const [sources, { events, failed }, issuePool] = await Promise.all([
+                const [sources, { events, failed }, issuePool, config] = await Promise.all([
                     fetchCalendarSources(),
                     fetchCalendarEvents(weekStart, weekEnd),
                     fetchIssuePool(),
+                    fetchMatchConfig(),
                 ]);
                 if (cancelled) return;
+
+                setMatchConfig(config);
 
                 setCalendars(sources);
                 setIssuePoolOptions(buildIssuePickerOptions(issuePool, ticketList));
@@ -152,18 +185,61 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
         }
     };
 
-    const handleCreate = () => {
-        const drafts: DraftWorklog[] = includedBlocks.map(block => ({
-            id: crypto.randomUUID(),
-            issueKey: defaultIssueKey,
-            start: block.start,
-            end: block.end,
-            durationMinutes: calculateDuration(new Date(block.start), new Date(block.end)),
-            source: 'draft',
-            changeType: 'create',
-            lastModified: new Date().toISOString(),
-        }));
-        onImport(drafts);
+    const candidates = useMemo(
+        () => issuePoolOptions.map(o => ({ key: o.key, summary: o.summary })),
+        [issuePoolOptions],
+    );
+    const rows = useMemo(() => buildRows(includedBlocks, grouped), [includedBlocks, grouped]);
+    const claudeTitles = useMemo(() => titlesForClaude(includedBlocks, assignments), [includedBlocks, assignments]);
+    const unmappedCount = rows.filter(r => needsTicket(rowAssignment(r, assignments))).length;
+
+    const goToMapping = async () => {
+        setStep(2);
+        setMatching(true);
+        setMatchError(null);
+        try {
+            const titles = Array.from(new Set(includedBlocks.map(b => b.title)));
+            const proposals = await matchTitles(titles, candidates);
+            setAssignments(prev => applyProposals(prev, includedBlocks, proposals));
+        } catch (err) {
+            setMatchError(err instanceof Error ? err.message : 'matching failed');
+        } finally {
+            setMatching(false);
+        }
+    };
+
+    const askClaude = async (titles: string[]) => {
+        const proposals = await askClaudeToMatch(titles, candidates);
+        setAssignments(prev => applyProposals(prev, includedBlocks, proposals));
+    };
+
+    const chooseIssue = (row: MappingRow, key: string) => setAssignments(prev => setIssue(prev, row.blockIds, key));
+    const skipRow = (row: MappingRow, skip: boolean) => setAssignments(prev => setSkip(prev, row.blockIds, skip));
+    const rememberRow = (row: MappingRow, remember: boolean) => setAssignments(prev => setRemember(prev, row.blockIds, remember));
+
+    const drafts = useMemo(() => toDrafts(includedBlocks, assignments), [includedBlocks, assignments]);
+    const draftMinutes = drafts.reduce((sum, d) => sum + d.durationMinutes, 0);
+    const usedTicketCount = new Set(drafts.map(d => d.issueKey)).size;
+
+    const handleCreate = async () => {
+        setCreating(true);
+        try {
+            await saveLearnedMappings(pairsToRemember(includedBlocks, assignments));
+        } catch (err) {
+            // Learning is a convenience; never block creating the drafts on it.
+            console.error('[CALENDAR IMPORT] Could not save learned mappings', err);
+        }
+
+        const known = new Set(ticketList.map(t => t.key));
+        const summaryByKey = new Map(issuePoolOptions.map(o => [o.key, o.summary]));
+        const newTickets: TicketEntry[] = [];
+        for (const key of new Set(drafts.map(d => d.issueKey))) {
+            if (known.has(key)) continue;
+            const summary = summaryByKey.get(key);
+            newTickets.push(summary && summary !== key ? { key, alias: summary } : { key });
+        }
+
+        onImport(drafts, newTickets);
         onClose();
     };
 
@@ -178,13 +254,18 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
             <div className="import-wizard" role="dialog" aria-modal="true" aria-label="Import calendar">
                 <div className="import-wizard-top">
                     <h2>Import calendar · w/c {weekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</h2>
+                    <div className="import-stepper">
+                        <span className={step === 1 ? 'import-step--on' : 'import-step--done'}>{step === 2 ? '✓ ' : '1 '}Review blocks</span>
+                        →
+                        <span className={step === 2 ? 'import-step--on' : ''}>2 Map to tickets</span>
+                    </div>
                     <button className="import-wizard-close" onClick={onClose} aria-label="Close">×</button>
                 </div>
 
                 {loading && <div className="import-wizard-status">Loading calendars…</div>}
                 {error && <div className="import-wizard-status import-wizard-status--error">{error}</div>}
 
-                {!loading && !error && (
+                {!loading && !error && step === 1 && (
                     <>
                         <div className="import-wizard-bar">
                             <span className="import-wizard-bar-label">Calendars</span>
@@ -323,29 +404,61 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
                                 {clashCount > 0 && <> · <span className="import-wizard-summary-warn">{clashCount} overlap{clashCount === 1 ? '' : 's'}</span></>}
                             </div>
                             <div className="import-wizard-foot-right">
-                                <div className="import-default-issue">
-                                    <span>Assign to:</span>
-                                    <IssuePicker
-                                        value={defaultIssueKey}
-                                        options={issuePoolOptions}
-                                        onChange={setDefaultIssueKey}
-                                        placeholder="Choose a ticket…"
-                                    />
-                                </div>
                                 <button type="button" onClick={onClose}>Cancel</button>
                                 <button
                                     type="button"
                                     className="import-wizard-primary"
-                                    disabled={includedBlocks.length === 0 || !defaultIssueKey}
+                                    disabled={includedBlocks.length === 0}
+                                    onClick={goToMapping}
+                                >
+                                    Next: map to tickets →
+                                </button>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {!loading && !error && step === 2 && (
+                    <>
+                        <MappingStep
+                            rows={rows}
+                            assignments={assignments}
+                            options={issuePoolOptions}
+                            matching={matching}
+                            matchError={matchError}
+                            matchConfig={matchConfig}
+                            grouped={grouped}
+                            claudeTitles={claudeTitles}
+                            onToggleGrouped={() => setGrouped(g => !g)}
+                            onSetIssue={chooseIssue}
+                            onSetSkip={skipRow}
+                            onSetRemember={rememberRow}
+                            onAskClaude={askClaude}
+                            onOpenLearned={() => setLearnedOpen(true)}
+                        />
+                        <div className="import-wizard-foot">
+                            <div className="import-wizard-summary">
+                                <b>{drafts.length} draft{drafts.length === 1 ? '' : 's'}</b>
+                                {' · '}<b>{Math.floor(draftMinutes / 60)}h {draftMinutes % 60}m</b> across {usedTicketCount} ticket{usedTicketCount === 1 ? '' : 's'}
+                                {unmappedCount > 0 && <> · <span className="import-wizard-summary-warn">{unmappedCount} still need{unmappedCount === 1 ? 's' : ''} a ticket</span></>}
+                            </div>
+                            <div className="import-wizard-foot-right">
+                                <button type="button" onClick={() => setStep(1)}>← Back</button>
+                                <button
+                                    type="button"
+                                    className="import-wizard-primary"
+                                    disabled={matching || creating || drafts.length === 0 || !isComplete(includedBlocks, assignments)}
                                     onClick={handleCreate}
                                 >
-                                    Create {includedBlocks.length} draft worklog{includedBlocks.length === 1 ? '' : 's'}
+                                    Create {drafts.length} draft worklog{drafts.length === 1 ? '' : 's'}
                                 </button>
                             </div>
                         </div>
                     </>
                 )}
             </div>
+
+            {learnedOpen && <LearnedMappingsModal options={issuePoolOptions} onClose={() => setLearnedOpen(false)} />}
         </>
     );
 };

@@ -34,6 +34,30 @@
     font-size: 17px;
 }
 
+.import-stepper {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 12px;
+    color: #666;
+}
+
+.import-stepper span {
+    padding: 3px 9px;
+    border-radius: 12px;
+    background: #eceff3;
+}
+
+.import-stepper .import-step--on {
+    background: #1976d2;
+    color: #fff;
+}
+
+.import-stepper .import-step--done {
+    background: #d6ead8;
+    color: #1e5f2b;
+}
+
 .import-wizard-close {
     background: none;
     border: none;
