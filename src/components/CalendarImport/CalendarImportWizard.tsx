@@ -51,7 +51,7 @@ interface CalendarImportWizardProps {
     onImport: (drafts: DraftWorklog[], tickets: TicketEntry[]) => void;
 }
 
-type CategoryKey = 'allDay' | 'freeTentative' | 'oof';
+type CategoryKey = 'allDay' | 'free' | 'tentative' | 'oof';
 
 export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
     weekStart,
@@ -69,7 +69,8 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
     const [enabledCalendarIds, setEnabledCalendarIds] = useState<Set<string>>(new Set());
     const [categoryIncluded, setCategoryIncluded] = useState<Record<CategoryKey, boolean>>({
         allDay: false,
-        freeTentative: false,
+        free: false,
+        tentative: false,
         oof: false,
     });
     const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
@@ -140,7 +141,8 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
 
     const categoryMatches = (block: ImportBlock, key: CategoryKey): boolean => {
         if (key === 'allDay') return block.allDay;
-        if (key === 'freeTentative') return block.busyStatus === 'free' || block.busyStatus === 'tentative';
+        if (key === 'free') return block.busyStatus === 'free';
+        if (key === 'tentative') return block.busyStatus === 'tentative';
         return block.busyStatus === 'oof' || block.busyStatus === 'working_elsewhere';
     };
 
@@ -314,8 +316,16 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
                             <button type="button" className={`import-chip${categoryIncluded.allDay ? ' import-chip--on' : ''}`} onClick={() => toggleCategory('allDay')}>
                                 All-day
                             </button>
-                            <button type="button" className={`import-chip${categoryIncluded.freeTentative ? ' import-chip--on' : ''}`} onClick={() => toggleCategory('freeTentative')}>
-                                Free / Tentative
+                            <button type="button" className={`import-chip${categoryIncluded.free ? ' import-chip--on' : ''}`} onClick={() => toggleCategory('free')}>
+                                Free
+                            </button>
+                            <button
+                                type="button"
+                                className={`import-chip${categoryIncluded.tentative ? ' import-chip--on' : ''}`}
+                                onClick={() => toggleCategory('tentative')}
+                                title="Outlook marks meetings you've only tentatively accepted, or not responded to, as tentative. They start excluded."
+                            >
+                                Tentative / no response
                             </button>
                             <button type="button" className={`import-chip${categoryIncluded.oof ? ' import-chip--on' : ''}`} onClick={() => toggleCategory('oof')}>
                                 Out of office

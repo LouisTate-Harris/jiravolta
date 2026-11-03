@@ -104,7 +104,7 @@ The Jira data cache is stored in a Docker named volume (`jiravolta-cache`) and p
 
 The **Import calendar** button (it appears once at least one calendar is configured) turns the meetings in your published Outlook calendars into draft worklogs for the week you're viewing. Nothing reaches Jira until you approve the drafts in the Review panel, as usual.
 
-1. **Review blocks**: all calendars are merged into one week grid. Drag to move or resize, drag on empty space to add a block, exclude or delete blocks, and resolve overlaps. All-day, Free, Tentative, Out-of-office and anything overlapping a worklog already in Jira start excluded.
+1. **Review blocks**: all calendars are merged into one week grid. Drag to move or resize, drag on empty space to add a block, exclude or delete blocks, and resolve overlaps. All-day, Free, Tentative or not-responded (Outlook shows both as tentative), Out-of-office and anything overlapping a worklog already in Jira start excluded.
 2. **Map to tickets**: one table for every block, with repeated titles grouped. Each row gets a proposed ticket and a badge showing where it came from, and you can change any of them with the searchable picker (or paste a Jira link). Every row needs a ticket or must be skipped before you can create the drafts.
 
 #### Configuring calendars
