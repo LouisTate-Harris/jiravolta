@@ -3,6 +3,7 @@ import { calculateDuration } from '../../utils/dateUtils';
 import { normaliseTitle } from '../../../server/matching/normalise';
 import type { MatchProposal } from '../../services/matchingService';
 import type { ImportBlock } from './importBlock';
+import type { GroupMember, Groups } from './grouping';
 
 export type AssignmentSource = 'remembered' | 'similar' | 'claude' | 'manual' | 'none';
 
@@ -21,10 +22,13 @@ export interface Assignment {
 export type Assignments = Record<string, Assignment>;
 
 export interface MappingRow {
+    /** The group id. */
     id: string;
     blockIds: string[];
     title: string;
     blocks: ImportBlock[];
+    /** Why each block is in this group, aligned with `blocks`. */
+    members: GroupMember[];
 }
 
 /** Below this, a local "similar" proposal is offered to Ask Claude as well. */
@@ -41,25 +45,56 @@ export const emptyAssignment = (): Assignment => ({
 
 const titleKey = (block: ImportBlock) => normaliseTitle(block.title) || block.title;
 
-/** One row per repeated title when grouped, otherwise one row per block. */
-export function buildRows(blocks: ImportBlock[], grouped: boolean): MappingRow[] {
+/** One row per group (a lone block is a group of one), in the order they start. */
+export function buildRows(blocks: ImportBlock[], groups: Groups): MappingRow[] {
     const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
-    if (!grouped) {
-        return sorted.map(b => ({ id: b.id, blockIds: [b.id], title: b.title, blocks: [b] }));
-    }
-
     const rows = new Map<string, MappingRow>();
     for (const block of sorted) {
-        const key = titleKey(block);
-        const row = rows.get(key);
+        const id = groups.groupOf[block.id] ?? block.id;
+        const member = groups.members[block.id] ?? { reason: 'anchor' as const, why: 'First in group' };
+        const row = rows.get(id);
         if (row) {
             row.blockIds.push(block.id);
             row.blocks.push(block);
+            row.members.push(member);
         } else {
-            rows.set(key, { id: key, blockIds: [block.id], title: block.title, blocks: [block] });
+            rows.set(id, { id, blockIds: [block.id], title: block.title, blocks: [block], members: [member] });
         }
     }
     return Array.from(rows.values());
+}
+
+/**
+ * Makes every block in a group share one assignment: a ticket you chose
+ * beats a proposal, a more confident proposal beats a weaker one, and any
+ * ticket beats none. `prefer` lets a block that just joined defer to the group.
+ */
+export function reconcileGroups(assignments: Assignments, blocks: ImportBlock[], groups: Groups, prefer?: Set<string>): Assignments {
+    const byGroup = new Map<string, string[]>();
+    for (const block of blocks) {
+        const id = groups.groupOf[block.id] ?? block.id;
+        byGroup.set(id, [...(byGroup.get(id) ?? []), block.id]);
+    }
+
+    const rank = (a: Assignment, preferred: boolean) =>
+        (a.issueKey ? 1000 : 0) + (a.source === 'manual' ? 100 : 0) + a.confidence * 10 + (preferred ? 1 : 0);
+
+    const next = { ...assignments };
+    for (const ids of byGroup.values()) {
+        if (ids.length < 2) continue;
+        let best = next[ids[0]] ?? emptyAssignment();
+        let bestRank = rank(best, prefer?.has(ids[0]) ?? false);
+        for (const id of ids.slice(1)) {
+            const candidate = next[id] ?? emptyAssignment();
+            const r = rank(candidate, prefer?.has(id) ?? false);
+            if (r > bestRank) {
+                best = candidate;
+                bestRank = r;
+            }
+        }
+        for (const id of ids) next[id] = { ...best };
+    }
+    return next;
 }
 
 export function rowAssignment(row: MappingRow, assignments: Assignments): Assignment {

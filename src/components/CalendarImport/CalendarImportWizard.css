@@ -10,7 +10,7 @@
     top: 4vh;
     left: 50%;
     transform: translateX(-50%);
-    width: min(1100px, 94vw);
+    width: min(1280px, 96vw);
     max-height: 92vh;
     background: #fff;
     border-radius: 10px;
@@ -348,4 +348,22 @@
         padding-left: 0;
         padding-top: 14px;
     }
+}
+
+.import-chip--calendar {
+    border-left-width: 5px;
+}
+
+.import-field-calendar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.import-calendar-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
 }

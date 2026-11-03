@@ -1,5 +1,6 @@
 import type { Worklog } from '../../types';
 import type { CalendarEventDto, BusyStatus } from '../../services/calendarService';
+import { getIssueColor } from '../../utils/colorUtils';
 
 export const MANUAL_CALENDAR_ID = 'manual';
 
@@ -78,4 +79,82 @@ export function findClashingBlockIds(blocks: ImportBlock[]): Set<string> {
     }
 
     return clashing;
+}
+
+/** The one colour used for a calendar everywhere: block edge, toggle chip, legend. */
+export function calendarColor(calendarId: string): string {
+    return calendarId === MANUAL_CALENDAR_ID ? '#999' : getIssueColor(calendarId);
+}
+
+/**
+ * A copy of a block placed straight after the original (same length), so it
+ * doesn't land on top of it. If there's no room left in the day it keeps the
+ * original time and can be dragged from there.
+ */
+export function duplicateBlock(block: ImportBlock): ImportBlock {
+    const start = new Date(block.start);
+    const end = new Date(block.end);
+    const duration = end.getTime() - start.getTime();
+    const copyStart = new Date(end);
+    const copyEnd = new Date(copyStart.getTime() + duration);
+    const sameDay = copyEnd.toDateString() === start.toDateString();
+
+    return {
+        ...block,
+        id: crypto.randomUUID(),
+        start: sameDay ? copyStart.toISOString() : block.start,
+        end: sameDay ? copyEnd.toISOString() : block.end,
+        excluded: false,
+        alreadyLogged: false,
+    };
+}
+
+export interface BlockLane {
+    lane: number;
+    lanes: number;
+}
+
+/**
+ * Outlook-style overlap layout for one day: blocks that overlap are put in
+ * side-by-side lanes sharing the column width, so nothing is drawn on top of
+ * anything else. Lanes are assigned per cluster of overlapping blocks;
+ * `calendarOrder` makes blocks from the same calendar prefer the same lane.
+ */
+export function layoutLanes(blocks: ImportBlock[], calendarOrder: string[] = []): Map<string, BlockLane> {
+    const rank = (b: ImportBlock) => {
+        const i = calendarOrder.indexOf(b.calendarId);
+        return i === -1 ? calendarOrder.length : i;
+    };
+    const sorted = [...blocks].sort((a, b) =>
+        a.start.localeCompare(b.start) || rank(a) - rank(b) || b.end.localeCompare(a.end),
+    );
+
+    const result = new Map<string, BlockLane>();
+    let cluster: Array<{ block: ImportBlock; lane: number }> = [];
+    let laneEnds: string[] = [];
+    let clusterEnd = '';
+
+    const flush = () => {
+        for (const item of cluster) result.set(item.block.id, { lane: item.lane, lanes: laneEnds.length });
+        cluster = [];
+        laneEnds = [];
+        clusterEnd = '';
+    };
+
+    for (const block of sorted) {
+        if (cluster.length > 0 && block.start >= clusterEnd) flush();
+
+        let lane = laneEnds.findIndex(end => end <= block.start);
+        if (lane === -1) {
+            lane = laneEnds.length;
+            laneEnds.push(block.end);
+        } else {
+            laneEnds[lane] = block.end;
+        }
+        cluster.push({ block, lane });
+        if (block.end > clusterEnd) clusterEnd = block.end;
+    }
+    flush();
+
+    return result;
 }

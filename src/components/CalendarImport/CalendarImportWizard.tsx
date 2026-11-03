@@ -16,15 +16,18 @@ import {
     saveLearnedMappings,
     type MatchConfig,
 } from '../../services/matchingService';
-import { toImportBlock, findClashingBlockIds } from './importBlock';
+import { toImportBlock, findClashingBlockIds, duplicateBlock, calendarColor } from './importBlock';
 import type { ImportBlock } from './importBlock';
 import { ImportBlockGrid } from './ImportBlockGrid';
 import { buildIssuePickerOptions } from './issuePickerOptions';
 import { MappingStep } from './MappingStep';
 import { LearnedMappingsModal } from './LearnedMappingsModal';
+import { autoGroup, splitOut, moveToGroup } from './grouping';
+import type { Groups } from './grouping';
 import {
     applyProposals,
     buildRows,
+    reconcileGroups,
     isComplete,
     needsTicket,
     pairsToRemember,
@@ -75,7 +78,8 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
     const [matching, setMatching] = useState(false);
     const [matchError, setMatchError] = useState<string | null>(null);
     const [matchConfig, setMatchConfig] = useState<MatchConfig>({ claudeAvailable: false, claudeModel: null });
-    const [grouped, setGrouped] = useState(true);
+    const [groups, setGroups] = useState<Groups>({ groupOf: {}, members: {} });
+    const [groupedFor, setGroupedFor] = useState('');
     const [learnedOpen, setLearnedOpen] = useState(false);
     const [creating, setCreating] = useState(false);
     const [issuePoolOptions, setIssuePoolOptions] = useState<ReturnType<typeof buildIssuePickerOptions>>([]);
@@ -159,6 +163,12 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
         setBlocks(prev => [...prev, block]);
     };
 
+    const duplicateSelected = (block: ImportBlock) => {
+        const copy = duplicateBlock(block);
+        setBlocks(prev => [...prev, copy]);
+        setSelectedBlockId(copy.id);
+    };
+
     const changeBlockDay = (block: ImportBlock, dayIndex: number) => {
         const target = weekDays[dayIndex];
         const start = new Date(block.start);
@@ -189,18 +199,27 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
         () => issuePoolOptions.map(o => ({ key: o.key, summary: o.summary })),
         [issuePoolOptions],
     );
-    const rows = useMemo(() => buildRows(includedBlocks, grouped), [includedBlocks, grouped]);
+    const rows = useMemo(() => buildRows(includedBlocks, groups), [includedBlocks, groups]);
     const claudeTitles = useMemo(() => titlesForClaude(includedBlocks, assignments), [includedBlocks, assignments]);
     const unmappedCount = rows.filter(r => needsTicket(rowAssignment(r, assignments))).length;
 
     const goToMapping = async () => {
+        // Auto-group afresh only when the set of blocks changed; otherwise keep any splits/merges you made.
+        const signature = includedBlocks.map(b => b.id).sort().join('|');
+        let activeGroups = groups;
+        if (signature !== groupedFor) {
+            activeGroups = autoGroup(includedBlocks);
+            setGroups(activeGroups);
+            setGroupedFor(signature);
+        }
+
         setStep(2);
         setMatching(true);
         setMatchError(null);
         try {
             const titles = Array.from(new Set(includedBlocks.map(b => b.title)));
             const proposals = await matchTitles(titles, candidates);
-            setAssignments(prev => applyProposals(prev, includedBlocks, proposals));
+            setAssignments(prev => reconcileGroups(applyProposals(prev, includedBlocks, proposals), includedBlocks, activeGroups));
         } catch (err) {
             setMatchError(err instanceof Error ? err.message : 'matching failed');
         } finally {
@@ -210,7 +229,16 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
 
     const askClaude = async (titles: string[]) => {
         const proposals = await askClaudeToMatch(titles, candidates);
-        setAssignments(prev => applyProposals(prev, includedBlocks, proposals));
+        setAssignments(prev => reconcileGroups(applyProposals(prev, includedBlocks, proposals), includedBlocks, groups));
+    };
+
+    const splitBlock = (blockId: string) => setGroups(prev => splitOut(prev, blockId));
+    const addToGroup = (blockId: string, targetGroupId: string) => {
+        const next = moveToGroup(groups, blockId, targetGroupId);
+        setGroups(next);
+        // The block adopts the group's ticket, so a whole group always shares one.
+        const others = new Set(includedBlocks.filter(b => b.id !== blockId && next.groupOf[b.id] === targetGroupId).map(b => b.id));
+        setAssignments(prev => reconcileGroups(prev, includedBlocks, next, others));
     };
 
     const chooseIssue = (row: MappingRow, key: string) => setAssignments(prev => setIssue(prev, row.blockIds, key));
@@ -273,8 +301,10 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
                                 <button
                                     key={cal.id}
                                     type="button"
-                                    className={`import-chip${enabledCalendarIds.has(cal.id) ? ' import-chip--on' : ''}`}
+                                    className={`import-chip import-chip--calendar${enabledCalendarIds.has(cal.id) ? ' import-chip--on' : ''}`}
+                                    style={{ borderLeftColor: calendarColor(cal.id) }}
                                     onClick={() => toggleCalendar(cal.id)}
+                                    title={enabledCalendarIds.has(cal.id) ? `Hide ${cal.label}` : `Show ${cal.label}`}
                                 >
                                     {cal.label}
                                     <span className="import-chip-count">{blocks.filter(b => b.calendarId === cal.id).length}</span>
@@ -316,15 +346,11 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
                                         <h3>Selected block</h3>
                                         <label className="import-field">
                                             Title
-                                            {selectedBlock.manual ? (
-                                                <input
-                                                    type="text"
-                                                    value={selectedBlock.title}
-                                                    onChange={e => updateBlock(selectedBlock.id, { title: e.target.value })}
-                                                />
-                                            ) : (
-                                                <div className="import-field-static">{selectedBlock.title}</div>
-                                            )}
+                                            <input
+                                                type="text"
+                                                value={selectedBlock.title}
+                                                onChange={e => updateBlock(selectedBlock.id, { title: e.target.value })}
+                                            />
                                         </label>
                                         <div className="import-field-row">
                                             <label className="import-field">
@@ -340,7 +366,8 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
                                             </label>
                                             <label className="import-field">
                                                 Calendar
-                                                <div className="import-field-static">
+                                                <div className="import-field-static import-field-calendar">
+                                                    <i className="import-calendar-swatch" style={{ background: calendarColor(selectedBlock.calendarId) }} />
                                                     {selectedBlock.manual ? 'Added by hand' : calendars.find(c => c.id === selectedBlock.calendarId)?.label ?? selectedBlock.calendarId}
                                                 </div>
                                             </label>
@@ -364,6 +391,9 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
                                             </div>
                                         </div>
                                         <div className="import-side-actions">
+                                            <button type="button" onClick={() => duplicateSelected(selectedBlock)} title="Add a copy straight after this block">
+                                                Duplicate
+                                            </button>
                                             <button type="button" onClick={() => updateBlock(selectedBlock.id, { excluded: !selectedBlock.excluded })}>
                                                 {selectedBlock.excluded ? 'Include' : 'Exclude'}
                                             </button>
@@ -427,9 +457,9 @@ export const CalendarImportWizard: React.FC<CalendarImportWizardProps> = ({
                             matching={matching}
                             matchError={matchError}
                             matchConfig={matchConfig}
-                            grouped={grouped}
                             claudeTitles={claudeTitles}
-                            onToggleGrouped={() => setGrouped(g => !g)}
+                            onSplitBlock={splitBlock}
+                            onAddToGroup={addToGroup}
                             onSetIssue={chooseIssue}
                             onSetSkip={skipRow}
                             onSetRemember={rememberRow}

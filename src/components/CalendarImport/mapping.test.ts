@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
     applyProposals, buildRows, emptyAssignment, isComplete, pairsToRemember,
-    setIssue, setSkip, titlesForClaude, toDrafts,
+    reconcileGroups, setIssue, setSkip, titlesForClaude, toDrafts,
 } from './mapping';
+import { autoGroup, moveToGroup, splitOut } from './grouping';
 import type { ImportBlock } from './importBlock';
 
 function block(id: string, title: string, hour = 9, overrides: Partial<ImportBlock> = {}): ImportBlock {
@@ -21,13 +22,45 @@ const proposal = (title: string, issueKey: string | null, source: 'remembered' |
 describe('buildRows', () => {
     const blocks = [block('a', 'Stand-up (1/5)', 9), block('b', 'RE: Stand-up', 10), block('c', 'Budget review', 11)];
 
-    it('groups repeated titles, ignoring cosmetic differences', () => {
-        const rows = buildRows(blocks, true);
+    it('makes one row per group, carrying why each block is in it', () => {
+        const rows = buildRows(blocks, autoGroup(blocks));
         expect(rows.map(r => r.blockIds)).toEqual([['a', 'b'], ['c']]);
+        expect(rows[0].members.map(m => m.reason)).toEqual(['anchor', 'same']);
     });
 
-    it('gives one row per block when ungrouped', () => {
-        expect(buildRows(blocks, false)).toHaveLength(3);
+    it('follows manual changes to the groups', () => {
+        let groups = splitOut(autoGroup(blocks), 'b');
+        expect(buildRows(blocks, groups)).toHaveLength(3);
+        groups = moveToGroup(groups, 'c', 'a');
+        expect(buildRows(blocks, groups).map(r => r.blockIds)).toEqual([['a', 'c'], ['b']]);
+    });
+});
+
+describe('reconcileGroups', () => {
+    const blocks = [block('a', 'Emails, Teams and Slack catch up', 9), block('b', 'Emails, Teams, Slack', 10), block('c', 'Lunch', 12)];
+    const groups = autoGroup(blocks);
+
+    it('gives every block in a group the best member assignment', () => {
+        const proposed = applyProposals({}, blocks, [proposal('Emails, Teams and Slack catch up', 'ABC-1', 'remembered', 1)]);
+        const result = reconcileGroups(proposed, blocks, groups);
+        expect(result.b.issueKey).toBe('ABC-1');
+        expect(result.b.source).toBe('remembered');
+        expect(result.c?.issueKey ?? null).toBeNull();
+    });
+
+    it('lets a manual choice win over a proposal', () => {
+        let assignments = applyProposals({}, blocks, [proposal('Emails, Teams and Slack catch up', 'ABC-1', 'remembered', 1)]);
+        assignments = setIssue(assignments, ['b'], 'ABC-9');
+        expect(reconcileGroups(assignments, blocks, groups).a.issueKey).toBe('ABC-9');
+    });
+
+    it('has a block that just joined a group take the group\'s ticket', () => {
+        const mine = setIssue({}, ['c'], 'ABC-5');
+        let assignments = applyProposals(mine, blocks, [proposal('Emails, Teams and Slack catch up', 'ABC-1', 'remembered', 1)]);
+        assignments = setIssue(assignments, ['a', 'b'], 'ABC-1');
+        const joined = moveToGroup(groups, 'c', groups.groupOf.a);
+        const result = reconcileGroups(assignments, blocks, joined, new Set(['a', 'b']));
+        expect(result.c.issueKey).toBe('ABC-1');
     });
 });
 

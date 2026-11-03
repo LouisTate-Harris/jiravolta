@@ -30,6 +30,21 @@ describe('buildIssuePickerOptions', () => {
         const ticketList: TicketEntry[] = [{ key: 'ABC-1', alias: 'My alias' }];
         const options = buildIssuePickerOptions(pool, ticketList);
         expect(options).toHaveLength(1);
-        expect(options[0]).toEqual({ key: 'ABC-1', summary: 'My alias', group: 'Ticket list' });
+        expect(options[0]).toEqual({ key: 'ABC-1', summary: 'Pool summary', group: 'Ticket list' });
+    });
+
+    it('offers only sprint and filter issues when either is configured', () => {
+        const pool: PoolIssue[] = [
+            { key: 'IN-1', summary: 'On the board', sources: ['sprint'] },
+            { key: 'IN-2', summary: 'In the filter', sources: ['filter', 'assigned'] },
+            { key: 'OUT-1', summary: 'Only assigned to me', sources: ['assigned'] },
+        ];
+        const ticketList: TicketEntry[] = [{ key: 'OUT-2', alias: 'Elsewhere' }, { key: 'IN-1' }];
+        expect(buildIssuePickerOptions(pool, ticketList).map(o => o.key)).toEqual(['IN-1', 'IN-2']);
+    });
+
+    it('offers everything when neither a board nor a filter is configured', () => {
+        const pool: PoolIssue[] = [{ key: 'ABC-9', summary: 'Mine', sources: ['assigned'] }];
+        expect(buildIssuePickerOptions(pool, []).map(o => o.key)).toEqual(['ABC-9']);
     });
 });

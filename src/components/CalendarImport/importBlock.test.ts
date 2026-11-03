@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toImportBlock, findClashingBlockIds, createManualBlock, MANUAL_CALENDAR_ID } from './importBlock';
+import { toImportBlock, findClashingBlockIds, createManualBlock, duplicateBlock, layoutLanes, MANUAL_CALENDAR_ID } from './importBlock';
 import type { CalendarEventDto } from '../../services/calendarService';
 import type { Worklog } from '../../types';
 
@@ -76,5 +76,57 @@ describe('findClashingBlockIds', () => {
         const a = { ...toImportBlock(event({ uid: 'a' }), []) };
         const b = { ...toImportBlock(event({ uid: 'b', start: '2026-11-03T11:00:00.000Z', end: '2026-11-03T12:00:00.000Z' }), []) };
         expect(findClashingBlockIds([a, b])).toEqual(new Set());
+    });
+});
+
+describe('layoutLanes', () => {
+    const block = (uid: string, calendarId: string, start: string, end: string) =>
+        toImportBlock(event({ uid, calendarId, start: `2026-11-03T${start}:00.000Z`, end: `2026-11-03T${end}:00.000Z` }), []);
+
+    it('gives a lone block the full width', () => {
+        expect(layoutLanes([block('a', 'main', '09:00', '10:00')]).get('a')).toEqual({ lane: 0, lanes: 1 });
+    });
+
+    it('puts overlapping blocks side by side, calendar order deciding the lane', () => {
+        const lanes = layoutLanes(
+            [block('task', 'plan', '09:00', '10:00'), block('meeting', 'main', '09:30', '10:30')],
+            ['main', 'plan'],
+        );
+        expect(lanes.get('task')).toEqual({ lane: 0, lanes: 2 });
+        expect(lanes.get('meeting')).toEqual({ lane: 1, lanes: 2 });
+    });
+
+    it('reuses a freed lane and keeps separate clusters independent', () => {
+        const lanes = layoutLanes([
+            block('a', 'main', '09:00', '10:00'),
+            block('b', 'main', '09:30', '11:00'),
+            block('c', 'main', '10:00', '10:30'),
+            block('d', 'main', '13:00', '14:00'),
+        ]);
+        expect(lanes.get('c')).toEqual({ lane: 0, lanes: 2 });
+        expect(lanes.get('d')).toEqual({ lane: 0, lanes: 1 });
+    });
+
+    it('treats back-to-back blocks as not overlapping', () => {
+        const lanes = layoutLanes([block('a', 'main', '09:00', '10:00'), block('b', 'main', '10:00', '11:00')]);
+        expect(lanes.get('b')).toEqual({ lane: 0, lanes: 1 });
+    });
+});
+
+describe('duplicateBlock', () => {
+    it('places the copy straight after the original, same length, with a new id', () => {
+        const original = toImportBlock(event(), []);
+        const copy = duplicateBlock(original);
+        expect(copy.id).not.toBe(original.id);
+        expect(copy.start).toBe(original.end);
+        expect(copy.end).toBe('2026-11-03T11:00:00.000Z');
+        expect(copy.title).toBe(original.title);
+        expect(copy.calendarId).toBe(original.calendarId);
+    });
+
+    it('is included even if the original was excluded', () => {
+        const copy = duplicateBlock({ ...toImportBlock(event(), []), excluded: true, alreadyLogged: true });
+        expect(copy.excluded).toBe(false);
+        expect(copy.alreadyLogged).toBe(false);
     });
 });

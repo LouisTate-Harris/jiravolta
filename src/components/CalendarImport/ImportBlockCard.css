@@ -1,7 +1,5 @@
 .import-block {
     position: absolute;
-    left: 3px;
-    right: 3px;
     border-radius: 4px;
     padding: 3px 6px;
     font-size: 11px;
@@ -70,9 +68,12 @@
 
 .import-block-title {
     font-weight: 600;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--title-lines, 1);
+    line-clamp: var(--title-lines, 1);
     overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 
 .import-block-time {

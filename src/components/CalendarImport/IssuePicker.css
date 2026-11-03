@@ -116,6 +116,12 @@
     padding: 5px 10px 2px;
 }
 
+.issue-picker-option .issue-picker-summary {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+}
+
 .issue-picker-option {
     display: flex;
     gap: 8px;

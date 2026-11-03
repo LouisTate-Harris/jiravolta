@@ -27,7 +27,8 @@ export const IssuePicker: React.FC<IssuePickerProps> = ({ value, options, onChan
     const containerRef = useRef<HTMLDivElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const selected = options.find(o => o.key === value);
+    // A key can be set from outside the options (a pasted link), so still show it.
+    const selected = options.find(o => o.key === value) ?? (value ? { key: value, summary: '', group: 'Ticket list' as const } : undefined);
 
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
@@ -45,7 +46,7 @@ export const IssuePicker: React.FC<IssuePickerProps> = ({ value, options, onChan
     const updatePosition = () => {
         if (!containerRef.current) return;
         const rect = containerRef.current.getBoundingClientRect();
-        const width = Math.max(rect.width, 320);
+        const width = Math.max(rect.width, 440);
         const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
         const roomBelow = window.innerHeight - rect.bottom;
         setPosition(roomBelow >= 320 || roomBelow >= rect.top
@@ -98,6 +99,7 @@ export const IssuePicker: React.FC<IssuePickerProps> = ({ value, options, onChan
             <button
                 type="button"
                 className="issue-picker-trigger"
+                title={selected ? `${selected.key} ${selected.summary}`.trim() : undefined}
                 onClick={toggleOpen}
                 disabled={disabled}
             >

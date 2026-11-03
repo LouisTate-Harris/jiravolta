@@ -14,9 +14,9 @@ interface MappingStepProps {
     matching: boolean;
     matchError: string | null;
     matchConfig: MatchConfig;
-    grouped: boolean;
     claudeTitles: string[];
-    onToggleGrouped: () => void;
+    onSplitBlock: (blockId: string) => void;
+    onAddToGroup: (blockId: string, groupId: string) => void;
     onSetIssue: (row: MappingRow, issueKey: string) => void;
     onSetSkip: (row: MappingRow, skip: boolean) => void;
     onSetRemember: (row: MappingRow, remember: boolean) => void;
@@ -35,13 +35,15 @@ const BADGE: Record<AssignmentSource, { label: string; className: string }> = {
 const formatMinutes = (m: number) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 
 export const MappingStep: React.FC<MappingStepProps> = ({
-    rows, assignments, options, matching, matchError, matchConfig, grouped, claudeTitles,
-    onToggleGrouped, onSetIssue, onSetSkip, onSetRemember, onAskClaude, onOpenLearned,
+    rows, assignments, options, matching, matchError, matchConfig, claudeTitles,
+    onSplitBlock, onAddToGroup, onSetIssue, onSetSkip, onSetRemember, onAskClaude, onOpenLearned,
 }) => {
     const [onlyNeeding, setOnlyNeeding] = useState(false);
     const [previewOpen, setPreviewOpen] = useState(false);
     const [claudeBusy, setClaudeBusy] = useState(false);
     const [claudeError, setClaudeError] = useState<string | null>(null);
+    // Groups the matcher built from non-identical titles start open so you can see what it decided.
+    const [flipped, setFlipped] = useState<Set<string>>(new Set());
 
     const visibleRows = useMemo(
         () => (onlyNeeding ? rows.filter(r => needsTicket(rowAssignment(r, assignments))) : rows),
@@ -49,6 +51,15 @@ export const MappingStep: React.FC<MappingStepProps> = ({
     );
     const needCount = rows.filter(r => needsTicket(rowAssignment(r, assignments))).length;
     const optionByKey = useMemo(() => new Map(options.map(o => [o.key, o])), [options]);
+
+    const isFuzzy = (row: MappingRow) => row.members.some(m => m.reason === 'similar' || m.reason === 'overrun' || m.reason === 'manual');
+    const isOpen = (row: MappingRow) => row.blocks.length > 1 && (isFuzzy(row) !== flipped.has(row.id));
+    const toggleOpen = (row: MappingRow) => setFlipped(prev => {
+        const next = new Set(prev);
+        if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
+        return next;
+    });
+    const groupTargets = rows.filter(r => r.blocks.length > 0);
 
     const sendToClaude = async () => {
         setClaudeBusy(true);
@@ -67,9 +78,7 @@ export const MappingStep: React.FC<MappingStepProps> = ({
         <div className="mapping-step">
             <div className="import-wizard-bar">
                 <span className="import-wizard-bar-label">Tickets</span>
-                <button type="button" className={`import-chip${grouped ? ' import-chip--on' : ''}`} onClick={onToggleGrouped}>
-                    Group repeated titles
-                </button>
+                <span className="mapping-hint">Rows in a group share one ticket. Open a group to split a block out, or add a single row to a group.</span>
                 <button type="button" className={`import-chip${onlyNeeding ? ' import-chip--on' : ''}`} onClick={() => setOnlyNeeding(v => !v)}>
                     Only rows needing a ticket
                 </button>
@@ -139,51 +148,96 @@ export const MappingStep: React.FC<MappingStepProps> = ({
                                 const badge = BADGE[a.source];
                                 const first = new Date(row.blocks[0].start);
                                 const unmatched = needsTicket(a);
+                                const isGroup = row.blocks.length > 1;
+                                const open = isOpen(row);
                                 return (
-                                    <tr key={row.id} className={`${unmatched ? 'mapping-row--unmatched' : ''}${a.skip ? ' mapping-row--skipped' : ''}`}>
-                                        <td className="mapping-when">
-                                            {row.blocks.length > 1
-                                                ? `${row.blocks.length} blocks`
-                                                : `${first.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' })} ${formatTime(first)}`}
-                                        </td>
-                                        <td className="mapping-num">{formatMinutes(rowMinutes(row))}</td>
-                                        <td className="mapping-title" title={row.title}>{row.title}</td>
-                                        <td>
-                                            <IssuePicker
-                                                value={a.issueKey ?? ''}
-                                                options={options}
-                                                disabled={a.skip}
-                                                onChange={key => onSetIssue(row, key)}
-                                                placeholder="Choose a ticket…"
-                                            />
-                                            {a.issueKey && !optionByKey.has(a.issueKey) && (
-                                                <span className="mapping-why">{a.issueKey} isn't in your ticket pool</span>
-                                            )}
-                                        </td>
-                                        <td>
-                                            <span className={`mapping-badge ${badge.className}`}>
-                                                {badge.label}{a.source === 'similar' ? ` ${Math.round(a.confidence * 100)}%` : ''}
-                                            </span>
-                                            {a.reason && !a.skip && <span className="mapping-why">{a.reason}</span>}
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="checkbox"
-                                                checked={a.remember}
-                                                disabled={a.skip || !a.issueKey}
-                                                onChange={e => onSetRemember(row, e.target.checked)}
-                                                aria-label={`Remember ${row.title}`}
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="checkbox"
-                                                checked={a.skip}
-                                                onChange={e => onSetSkip(row, e.target.checked)}
-                                                aria-label={`Skip ${row.title}`}
-                                            />
-                                        </td>
-                                    </tr>
+                                    <React.Fragment key={row.id}>
+                                        <tr className={`${isGroup ? 'mapping-row--group' : ''}${unmatched ? ' mapping-row--unmatched' : ''}${a.skip ? ' mapping-row--skipped' : ''}`}>
+                                            <td className="mapping-when">
+                                                {isGroup
+                                                    ? (
+                                                        <button type="button" className="mapping-group-toggle" onClick={() => toggleOpen(row)} aria-expanded={open}>
+                                                            {open ? '▾' : '▸'} {row.blocks.length} blocks
+                                                        </button>
+                                                    )
+                                                    : `${first.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' })} ${formatTime(first)}`}
+                                            </td>
+                                            <td className="mapping-num">{formatMinutes(rowMinutes(row))}</td>
+                                            <td className="mapping-title" title={row.title}>
+                                                {row.title}
+                                                {isGroup && isFuzzy(row) && <span className="mapping-group-note">grouped by similarity</span>}
+                                                {!isGroup && groupTargets.some(t => t.id !== row.id) && (
+                                                    <select
+                                                        className="mapping-add-group"
+                                                        value=""
+                                                        aria-label={`Add ${row.title} to a group`}
+                                                        onChange={e => e.target.value && onAddToGroup(row.blockIds[0], e.target.value)}
+                                                    >
+                                                        <option value="">Add to group…</option>
+                                                        {groupTargets.filter(t => t.id !== row.id).map(t => (
+                                                            <option key={t.id} value={t.id}>{t.title}{t.blocks.length > 1 ? ` (×${t.blocks.length})` : ''}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                            </td>
+                                            <td>
+                                                <IssuePicker
+                                                    value={a.issueKey ?? ''}
+                                                    options={options}
+                                                    disabled={a.skip}
+                                                    onChange={key => onSetIssue(row, key)}
+                                                    placeholder="Choose a ticket…"
+                                                />
+                                                {a.issueKey && !optionByKey.has(a.issueKey) && (
+                                                    <span className="mapping-why">{a.issueKey} isn't on your board or filter</span>
+                                                )}
+                                            </td>
+                                            <td>
+                                                <span className={`mapping-badge ${badge.className}`}>
+                                                    {badge.label}{a.source === 'similar' ? ` ${Math.round(a.confidence * 100)}%` : ''}
+                                                </span>
+                                                {a.reason && !a.skip && <span className="mapping-why">{a.reason}</span>}
+                                            </td>
+                                            <td>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={a.remember}
+                                                    disabled={a.skip || !a.issueKey}
+                                                    onChange={e => onSetRemember(row, e.target.checked)}
+                                                    aria-label={`Remember ${row.title}`}
+                                                />
+                                            </td>
+                                            <td>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={a.skip}
+                                                    onChange={e => onSetSkip(row, e.target.checked)}
+                                                    aria-label={`Skip ${row.title}`}
+                                                />
+                                            </td>
+                                        </tr>
+                                        {open && row.blocks.map((block, i) => {
+                                            const start = new Date(block.start);
+                                            const member = row.members[i];
+                                            return (
+                                                <tr key={block.id} className="mapping-row--member">
+                                                    <td className="mapping-when">
+                                                        {start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' })} {formatTime(start)}
+                                                    </td>
+                                                    <td className="mapping-num">{formatMinutes(rowMinutes({ ...row, blocks: [block] }))}</td>
+                                                    <td className="mapping-title" title={block.title}>{block.title}</td>
+                                                    <td colSpan={2}>
+                                                        <span className={`mapping-member-why mapping-member-why--${member.reason}`}>{member.why}</span>
+                                                    </td>
+                                                    <td colSpan={2}>
+                                                        <button type="button" className="mapping-split" onClick={() => onSplitBlock(block.id)}>
+                                                            Split out
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </React.Fragment>
                                 );
                             })}
                         </tbody>

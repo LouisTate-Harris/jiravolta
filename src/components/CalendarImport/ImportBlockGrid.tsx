@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ImportBlock } from './importBlock';
-import { createManualBlock } from './importBlock';
+import { createManualBlock, layoutLanes } from './importBlock';
 import { ImportBlockCard } from './ImportBlockCard';
 import type { CalendarInfo } from '../../services/calendarService';
 import './ImportBlockGrid.css';
@@ -49,6 +49,18 @@ export const ImportBlockGrid: React.FC<ImportBlockGridProps> = ({
         return { startHour: Math.max(0, min), endHour: Math.min(24, max) };
     }, [blocks]);
 
+    // Open scrolled to the first block that will actually be imported, not to an early excluded one.
+    const wrapRef = useRef<HTMLDivElement>(null);
+    const scrolled = useRef(false);
+    useEffect(() => {
+        if (scrolled.current || !wrapRef.current) return;
+        const firstIncluded = blocks.filter(b => !b.allDay && !b.excluded).map(b => new Date(b.start)).sort((a, b) => a.getTime() - b.getTime());
+        if (firstIncluded.length === 0) return;
+        const earliest = Math.min(...firstIncluded.map(d => d.getHours() * 60 + d.getMinutes()));
+        wrapRef.current.scrollTop = Math.max(0, ((earliest - startHour * 60) / 60) * HOUR_HEIGHT - 8);
+        scrolled.current = true;
+    }, [blocks, startHour]);
+
     const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
 
     const pixelToMinutesFromMidnight = (y: number): number => {
@@ -95,13 +107,25 @@ export const ImportBlockGrid: React.FC<ImportBlockGridProps> = ({
         setCreateDrag(null);
     };
 
+    // Overlapping blocks share a column in side-by-side lanes, like Outlook.
+    const lanesById = useMemo(() => {
+        const order = calendars.map(c => c.id);
+        const all = new Map<string, { lane: number; lanes: number }>();
+        for (let i = 0; i < weekDays.length; i++) {
+            const target = weekDays[i].toDateString();
+            const dayBlocks = blocks.filter(b => !b.allDay && new Date(b.start).toDateString() === target);
+            for (const [id, lane] of layoutLanes(dayBlocks, order)) all.set(id, lane);
+        }
+        return all;
+    }, [blocks, calendars, weekDays]);
+
     const calendarLabel = (calendarId: string): string => {
         if (calendarId === 'manual') return 'Added by hand';
         return calendars.find(c => c.id === calendarId)?.label ?? calendarId;
     };
 
     return (
-        <div className="import-grid-wrap" onMouseUp={finishCreateDrag} onMouseLeave={finishCreateDrag}>
+        <div className="import-grid-wrap" ref={wrapRef} onMouseUp={finishCreateDrag} onMouseLeave={finishCreateDrag}>
             <div className="import-day-headers">
                 <div className="import-header-spacer" />
                 {weekDays.map((day, i) => (
@@ -159,6 +183,8 @@ export const ImportBlockGrid: React.FC<ImportBlockGridProps> = ({
                                     block={block}
                                     calendarLabel={calendarLabel(block.calendarId)}
                                     startHour={startHour}
+                                    lane={lanesById.get(block.id)?.lane ?? 0}
+                                    lanes={lanesById.get(block.id)?.lanes ?? 1}
                                     isSelected={selectedBlockId === block.id}
                                     isClashing={clashingIds.has(block.id)}
                                     onSelect={() => onSelectBlock(block.id)}
